@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AdminNavigation from "./components/AdminNavigation";
 import { signOut } from "./auth";
 
+import { getOrder, listOrders, subscribeOrders, upsertOrder } from "./ordersApi";
 const branches = [
   { id: "tadart", name: "Hanaa Food Tadart" },
   { id: "amgala", name: "Hanaa Food Amgala" },
@@ -25,20 +26,6 @@ const pickupStatuses = [
   "RÉCUPÉRÉE",
   "REFUSÉE PAR LE SNACK",
 ];
-const readOrders = () => {
-  try {
-    const saved = JSON.parse(localStorage.getItem("hanaa-orders") || "[]");
-    const legacy = JSON.parse(localStorage.getItem("hanaa-order") || "null");
-
-    if (Array.isArray(saved) && saved.length) return saved;
-    return legacy ? [legacy] : [];
-  } catch (error) {
-    console.error("Impossible de lire les commandes:", error);
-    return [];
-  }
-};
-const saveOrders = (orders) =>
-  localStorage.setItem("hanaa-orders", JSON.stringify(orders));
 const now = () => new Date().toISOString();
 const labelClass = (status) => status.toLowerCase().replaceAll(" ", "-");
 const notificationAudios = {};
@@ -72,8 +59,201 @@ const playNotificationTone = async (role) => {
   }
 };
 
+
+// HANAA_QZ_INTEGRATION_START
+const QZ_PRINTER_STORAGE_KEY = "hanaa-qz-printer";
+
+const qzAscii = (value = "") =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "");
+
+const qzMoney = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(number % 1 ? 2 : 0) : "0";
+};
+
+const qzDetailText = (value) => {
+  if (value == null || value === "" || value === false) return "";
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === "string" || typeof item === "number") return String(item);
+        if (item && typeof item === "object") return item.name || item.label || item.title || "";
+        return "";
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+  if (typeof value === "object") {
+    return Object.entries(value)
+      .filter(([, item]) => item !== false && item != null && item !== "")
+      .map(([key, item]) => {
+        if (Array.isArray(item)) return `${key}: ${qzDetailText(item)}`;
+        if (typeof item === "object") return "";
+        return `${key}: ${item}`;
+      })
+      .filter(Boolean)
+      .join(" | ");
+  }
+  return String(value);
+};
+
+const qzItemDetails = (item) => {
+  const candidates = [
+    ["Taille", item.selectedSize ?? item.size],
+    ["Variante", item.selectedVariant ?? item.variant],
+    ["Pate", item.pastaVariant ?? item.pasta],
+    ["Sauce", item.selectedSauce ?? item.sauce],
+    ["Sauces", item.selectedSauces ?? item.sauces],
+    ["Accompagnements", item.selectedAccompaniments ?? item.accompaniments],
+    ["Supplements", item.selectedExtras ?? item.extras ?? item.supplements],
+    ["Options", item.options],
+  ];
+
+  return candidates
+    .map(([label, value]) => {
+      const text = qzDetailText(value);
+      return text ? `${label}: ${text}` : "";
+    })
+    .filter(Boolean);
+};
+
+const qzEnsureConnected = async () => {
+  const qz = window.qz;
+  if (!qz) {
+    throw new Error("QZ Tray JavaScript ma tchargach. Verifie internet puis refresh.");
+  }
+
+  if (!qz.websocket.isActive()) {
+    await qz.websocket.connect({ retries: 2, delay: 1 });
+  }
+  return qz;
+};
+
+const qzResolvePrinter = async (qz) => {
+  const printers = await qz.printers.find();
+  if (!Array.isArray(printers) || printers.length === 0) {
+    throw new Error("Windows ma l9a ta imprimante.");
+  }
+
+  const saved = localStorage.getItem(QZ_PRINTER_STORAGE_KEY);
+  if (saved && printers.includes(saved)) return saved;
+
+  const preferredWords = [
+    "imp caisse",
+    "wd8260",
+    "wdlink",
+    "caisse",
+    "pos-80",
+    "pos80",
+    "ticket",
+    "thermal",
+    "receipt",
+  ];
+
+  const lower = printers.map((name) => ({ name, value: String(name).toLowerCase() }));
+  const match =
+    preferredWords
+      .map((word) => lower.find((printer) => printer.value.includes(word)))
+      .find(Boolean)?.name ||
+    (printers.length === 1 ? printers[0] : null);
+
+  if (!match) {
+    throw new Error(
+      `Imprimante caisse ma t3rftch automatiquement. Printers: ${printers.join(", ")}`
+    );
+  }
+
+  localStorage.setItem(QZ_PRINTER_STORAGE_KEY, match);
+  return match;
+};
+
+const qzBuildTicket = (order) => {
+  const ESC = "\x1b";
+  const GS = "\x1d";
+  const lines = [];
+  const separator = "------------------------------------------\n";
+
+  lines.push(ESC + "@");
+  lines.push(ESC + "a" + "\x01");
+  lines.push(ESC + "!" + "\x30");
+  lines.push("HANAA FOOD\n");
+  lines.push(ESC + "!" + "\x00");
+  if (order.branchName) lines.push(qzAscii(order.branchName) + "\n");
+  lines.push(separator);
+
+  lines.push(ESC + "a" + "\x00");
+  lines.push(`COMMANDE: ${qzAscii(order.id || "-")}\n`);
+  lines.push(`TYPE: ${order.orderType === "pickup" ? "A EMPORTER" : "LIVRAISON"}\n`);
+  lines.push(`DATE: ${new Date(order.createdAt || Date.now()).toLocaleString("fr-FR")}\n`);
+  lines.push(separator);
+
+  if (order.customerName) lines.push(`CLIENT: ${qzAscii(order.customerName)}\n`);
+  if (order.customerPhone) lines.push(`TEL: ${qzAscii(order.customerPhone)}\n`);
+  if (order.deliveryAddress) lines.push(`ADRESSE: ${qzAscii(order.deliveryAddress)}\n`);
+  if (order.distanceKm != null && order.orderType !== "pickup") {
+    lines.push(`DISTANCE: ${qzMoney(order.distanceKm)} KM\n`);
+  }
+  if (order.customerName || order.customerPhone || order.deliveryAddress) lines.push(separator);
+
+  lines.push(ESC + "E" + "\x01");
+  lines.push("ARTICLES\n");
+  lines.push(ESC + "E" + "\x00");
+
+  const items = Array.isArray(order.items) ? order.items : [];
+  if (!items.length) {
+    lines.push("Commande\n");
+  } else {
+    items.forEach((item) => {
+      const qty = Number(item.quantity || 1);
+      const name = qzAscii(item.name || item.title || "Produit");
+      const unit = Number(item.price || 0);
+      const lineTotal = unit * qty;
+
+      lines.push(`${qty} x ${name}`);
+      if (unit) lines.push(`  ${qzMoney(lineTotal)} DH`);
+      lines.push("\n");
+
+      qzItemDetails(item).forEach((detail) => {
+        lines.push(`  - ${qzAscii(detail)}\n`);
+      });
+    });
+  }
+
+  lines.push(separator);
+  if (order.subtotal != null) lines.push(`SOUS-TOTAL: ${qzMoney(order.subtotal)} DH\n`);
+  if (order.deliveryFee != null && order.orderType !== "pickup") {
+    lines.push(`LIVRAISON: ${qzMoney(order.deliveryFee)} DH\n`);
+  }
+
+  lines.push(ESC + "E" + "\x01");
+  lines.push(`TOTAL: ${qzMoney(order.total)} DH\n`);
+  lines.push(ESC + "E" + "\x00");
+
+  if (order.paymentMethod) lines.push(`PAIEMENT: ${qzAscii(order.paymentMethod)}\n`);
+  if (order.notes || order.note) lines.push(`NOTE: ${qzAscii(order.notes || order.note)}\n`);
+
+  lines.push(separator);
+  lines.push(ESC + "a" + "\x01");
+  lines.push("MERCI ET BON APPETIT\n\n\n");
+  lines.push(GS + "V" + "\x41" + "\x00");
+
+  return lines;
+};
+
+const printOrderTicketQz = async (order) => {
+  const qz = await qzEnsureConnected();
+  const printer = await qzResolvePrinter(qz);
+  const config = qz.configs.create(printer, { encoding: "CP858" });
+  await qz.print(config, qzBuildTicket(order));
+  return printer;
+};
+// HANAA_QZ_INTEGRATION_END
+
 export default function RoleWorkflow({ role, session, onHome, orderType, title, staffBranchId }) {
-  const [orders, setOrders] = useState(readOrders);
+  const [orders, setOrders] = useState([]);
   const branchId = session?.branchId || staffBranchId || null;
   const [snackOrderType, setSnackOrderType] = useState("delivery");
   const activeOrderType = role === "snack" ? snackOrderType : orderType;
@@ -94,6 +274,8 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
   }, [audioEnabled]);
 
   useEffect(() => {
+    let active = true;
+
     const isRelevantForNotification = (order) => {
       if (role === "snack") {
         return (
@@ -106,6 +288,7 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
       }
 
       return (
+        role === "driver" &&
         order.orderType === "delivery" &&
         order.statusLabel === "ACCEPTÉE PAR LE CAISSIER" &&
         !order.driverId
@@ -115,14 +298,11 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
     const notificationKey = (order) =>
       `${order.id}:${order.orderType}:${order.statusLabel}`;
 
-    const sync = () => {
-      const nextOrders = readOrders();
-      const snapshot = JSON.stringify(nextOrders);
+    const applyOrders = (nextOrders) => {
+      if (!active) return;
 
-      // Never force a React re-render when nothing changed.
-      if (snapshot === lastOrdersSnapshot.current && hasSyncedOrders.current) {
-        return;
-      }
+      const snapshot = JSON.stringify(nextOrders);
+      if (snapshot === lastOrdersSnapshot.current && hasSyncedOrders.current) return;
 
       const unseenRelevantOrders = nextOrders.filter(
         (order) =>
@@ -131,7 +311,6 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
       );
 
       if (!hasSyncedOrders.current) {
-        // Existing orders when the cashier opens the page are not "new".
         nextOrders.forEach((order) =>
           knownOrderKeys.current.add(notificationKey(order)),
         );
@@ -144,18 +323,15 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
               ? "NOUVELLE COMMANDE À EMPORTER"
               : "NOUVELLE COMMANDE LIVRAISON",
           );
-        } else {
+        } else if (role === "driver") {
           setNotification("NOUVELLE LIVRAISON DISPONIBLE");
         }
 
-        // Mark first so a failed/blocked sound never loops every polling cycle.
         unseenRelevantOrders.forEach((order) =>
           knownOrderKeys.current.add(notificationKey(order)),
         );
 
-        if (audioEnabledRef.current) {
-          void playNotificationTone(role);
-        }
+        if (audioEnabledRef.current) void playNotificationTone(role);
       }
 
       lastOrdersSnapshot.current = snapshot;
@@ -163,41 +339,51 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
       setOrders(nextOrders);
     };
 
-    sync();
+    const load = async () => {
+      try {
+        applyOrders(await listOrders());
+      } catch (error) {
+        console.error("Supabase orders sync failed:", error);
+      }
+    };
 
-    // Instant update between client/cashier tabs on the same origin.
-    window.addEventListener("storage", sync);
+    void load();
 
-    // Slow fallback only. It does not re-render if data did not change.
-    const timer = setInterval(sync, 4000);
+    let unsubscribe = () => {};
+    try {
+      unsubscribe = subscribeOrders(() => {
+        void load();
+      });
+    } catch (error) {
+      console.error("Supabase realtime start failed:", error);
+    }
 
     return () => {
-      window.removeEventListener("storage", sync);
-      clearInterval(timer);
+      active = false;
+      unsubscribe();
     };
   }, [branchId, role]);
 
-  const updateOrder = (orderId, updater) => {
-    setOrders((currentOrders) => {
-      const index = currentOrders.findIndex((order) => order.id === orderId);
-      if (index < 0) return currentOrders;
+  const updateOrder = async (orderId, updater) => {
+    try {
+      const current = await getOrder(orderId);
+      if (!current) return null;
 
-      const updated = updater(currentOrders[index]);
-      const next = currentOrders.map((order, itemIndex) =>
-        itemIndex === index ? updated : order,
+      const updated = updater(current);
+      const saved = await upsertOrder(updated);
+
+      setOrders((currentOrders) =>
+        currentOrders.map((item) => (item.id === saved.id ? saved : item)),
       );
 
-      try {
-        saveOrders(next);
-        lastOrdersSnapshot.current = JSON.stringify(next);
-      } catch (error) {
-        console.error("Impossible de mettre à jour la commande:", error);
-        return currentOrders;
-      }
-
-      return next;
-    });
+      return saved;
+    } catch (error) {
+      console.error("Supabase order update failed:", error);
+      window.alert("Mise à jour commande ma dazatch. Chouf connexion.");
+      return null;
+    }
   };
+
   const transition = (order, status, extra = {}) =>
     updateOrder(order.id, (current) => ({
       ...current,
@@ -208,6 +394,7 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
         { status, at: now(), ...extra },
       ],
     }));
+
   const visibleOrders = useMemo(() => {
     const typed = activeOrderType
       ? orders.filter((order) => order.orderType === activeOrderType)
@@ -220,22 +407,32 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
       order.driverId === driverId,
     );
   }, [activeOrderType, branchId, driverId, orders, role]);
-  const accept = (order) => {
+  const accept = async (order) => {
     if (order.orderType === "pickup") {
       transition(order, "VALIDÉE PAR LE SNACK", {
         cashierAcceptedBy: session?.id || `staff-${branchId}`,
         cashierAcceptedAt: now(),
         branchId,
       });
-      return;
+    } else {
+      transition(order, "ACCEPTÉE PAR LE CAISSIER", {
+        cashierAcceptedBy: session?.id || `staff-${branchId}`,
+        cashierAcceptedAt: now(),
+        branchId,
+        driverQueueAt: now(),
+      });
     }
 
-    transition(order, "ACCEPTÉE PAR LE CAISSIER", {
-      cashierAcceptedBy: session?.id || `staff-${branchId}`,
-      cashierAcceptedAt: now(),
-      branchId,
-      driverQueueAt: now(),
-    });
+    try {
+      const printer = await printOrderTicketQz(order);
+      setNotification(`TICKET IMPRIMÉ — ${printer}`);
+    } catch (error) {
+      console.error("QZ print error:", error);
+      setNotification("COMMANDE ACCEPTÉE — IMPRESSION À VÉRIFIER");
+      window.alert(
+        `Commande acceptée, mais ticket ma khrejch.\n${error?.message || error}\n\nKhalli QZ Tray ma7loul puis 3awed jarrab.`
+      );
+    }
   };
   const refuse = () => {
     if (!reason.trim()) return;
@@ -253,19 +450,36 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
   };
   const take = async (order) => {
     if (!driverId) return;
-    const claim = () => {
-      const current = readOrders();
-      const index = current.findIndex((item) => item.id === order.id);
-      const candidate = current[index];
-      if (!candidate || candidate.statusLabel !== "ACCEPTÉE PAR LE CAISSIER" || candidate.driverId) return false;
-      const updated = { ...candidate, driverId, driverName, driverTakenAt: now(), statusLabel: "PRISE PAR LE LIVREUR", statusHistory: [...(candidate.statusHistory || []), { status: "PRISE PAR LE LIVREUR", at: now(), driverId, driverName }] };
-      const next = current.map((item, itemIndex) => itemIndex === index ? updated : item);
-      saveOrders(next);
-      setOrders(next);
-      return true;
-    };
-    if (navigator.locks?.request) await navigator.locks.request(`hanaa-order-${order.id}`, { mode: "exclusive" }, claim);
-    else claim();
+
+    try {
+      const candidate = await getOrder(order.id);
+      if (
+        !candidate ||
+        candidate.statusLabel !== "ACCEPTÉE PAR LE CAISSIER" ||
+        candidate.driverId
+      ) {
+        return;
+      }
+
+      await updateOrder(order.id, (current) => ({
+        ...current,
+        driverId,
+        driverName,
+        driverTakenAt: now(),
+        statusLabel: "PRISE PAR LE LIVREUR",
+        statusHistory: [
+          ...(current.statusHistory || []),
+          {
+            status: "PRISE PAR LE LIVREUR",
+            at: now(),
+            driverId,
+            driverName,
+          },
+        ],
+      }));
+    } catch (error) {
+      console.error("Driver claim failed:", error);
+    }
   };
 
   return (
@@ -568,7 +782,7 @@ function OrderCard({
               order.acceptedBranchId ||
               "Branche non renseignée"}
           </span>
-          {showPrivateDetails && <span>{order.items?.map((item) => `${item.quantity} × ${item.name}`).join(", ")}</span>}
+          {showPrivateDetails && <span>{order.items?.map((item) => `${item.quantity} × ${item.name}${item.size ? ` (${item.size})` : ""}${item.sauce ? ` · Sauce: ${item.sauce}` : ""}`).join(", ")}</span>}
           <strong>{order.total} DH</strong>
           <span>{order.paymentMethod || "Paiement à la livraison"}</span>
           {!isPickup && (
@@ -720,7 +934,7 @@ function DriverSections({ orders, driverId, onTake, onTransition }) {
 
 function DriverAvailableCard({ order, onTake }) { return <article className="driver-order-card"><span className="workflow-status">NOUVELLE LIVRAISON DISPONIBLE</span><h2>#{order.id}</h2><p>{order.branchName || "Hanaa Food"}</p><p>{order.deliveryAddress ? order.deliveryAddress.split(",").slice(-2).join(", ") : "Zone à confirmer"}</p><div className="driver-order-meta"><b>{order.total} DH</b><span>Livraison {order.deliveryFee ?? 0} DH</span><span>{order.paymentMethod || "Espèces"}</span></div><button className="workflow-accept driver-primary" onClick={() => onTake(order)}>ACCEPTER</button></article>; }
 
-function DriverActiveCard({ order, onTransition, onComplete }) { const isStarted = order.statusLabel === "EN LIVRAISON"; const collected = order.paymentMethod === "Carte" ? 0 : order.total; const mapUrl = order.customerLatitude && order.customerLongitude ? `https://www.openstreetmap.org/?mlat=${order.customerLatitude}&mlon=${order.customerLongitude}#map=16/${order.customerLatitude}/${order.customerLongitude}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.deliveryAddress || "")}`; return <article className="driver-order-card driver-active-card"><span className="workflow-status">{order.statusLabel}</span><h2>#{order.id}</h2><div className="driver-detail-block"><b>CLIENT</b><strong>{order.customerName || "Client"}</strong><a href={`tel:${order.customerPhone}`}>{order.customerPhone || "Téléphone non renseigné"}</a><span>{order.deliveryAddress || "Adresse non renseignée"}</span></div><div className="driver-detail-block"><b>COMMANDE</b><span>{order.items?.map((item) => `${item.quantity} × ${item.name}`).join(", ") || "Commande"}</span></div><div className="driver-money"><span>Total commande <b>{order.total} DH</b></span><span>Livraison <b>{order.deliveryFee ?? 0} DH</b></span><strong>À ENCAISSER CHEZ LE CLIENT <b>{collected} DH</b></strong></div><div className="workflow-actions"><a className="workflow-call" href={`tel:${order.customerPhone}`}>APPELER LE CLIENT</a><a className="workflow-details" target="_blank" rel="noreferrer" href={mapUrl}>OUVRIR L’ADRESSE</a>{!isStarted ? <button className="workflow-accept driver-primary" onClick={() => onTransition(order, "EN LIVRAISON", { inDeliveryAt: now() })}>DÉMARRER LA LIVRAISON</button> : <button className="workflow-accept driver-primary" onClick={onComplete}>LIVRAISON TERMINÉE</button>}</div></article>; }
+function DriverActiveCard({ order, onTransition, onComplete }) { const isStarted = order.statusLabel === "EN LIVRAISON"; const collected = order.paymentMethod === "Carte" ? 0 : order.total; const mapUrl = order.customerLatitude && order.customerLongitude ? `https://www.openstreetmap.org/?mlat=${order.customerLatitude}&mlon=${order.customerLongitude}#map=16/${order.customerLatitude}/${order.customerLongitude}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.deliveryAddress || "")}`; return <article className="driver-order-card driver-active-card"><span className="workflow-status">{order.statusLabel}</span><h2>#{order.id}</h2><div className="driver-detail-block"><b>CLIENT</b><strong>{order.customerName || "Client"}</strong><a href={`tel:${order.customerPhone}`}>{order.customerPhone || "Téléphone non renseigné"}</a><span>{order.deliveryAddress || "Adresse non renseignée"}</span></div><div className="driver-detail-block"><b>COMMANDE</b><span>{order.items?.map((item) => `${item.quantity} × ${item.name}${item.size ? ` (${item.size})` : ""}${item.sauce ? ` · Sauce: ${item.sauce}` : ""}`).join(", ") || "Commande"}</span></div><div className="driver-money"><span>Total commande <b>{order.total} DH</b></span><span>Livraison <b>{order.deliveryFee ?? 0} DH</b></span><strong>À ENCAISSER CHEZ LE CLIENT <b>{collected} DH</b></strong></div><div className="workflow-actions"><a className="workflow-call" href={`tel:${order.customerPhone}`}>APPELER LE CLIENT</a><a className="workflow-details" target="_blank" rel="noreferrer" href={mapUrl}>OUVRIR L’ADRESSE</a>{!isStarted ? <button className="workflow-accept driver-primary" onClick={() => onTransition(order, "EN LIVRAISON", { inDeliveryAt: now() })}>DÉMARRER LA LIVRAISON</button> : <button className="workflow-accept driver-primary" onClick={onComplete}>LIVRAISON TERMINÉE</button>}</div></article>; }
 
 function Collect({ completed, groups }) { if (!completed.length) return <div className="workflow-empty">Aucune livraison terminée aujourd'hui.</div>; return Object.entries(groups).sort(([first], [second]) => new Date(second.split("/").reverse().join("-")) - new Date(first.split("/").reverse().join("-"))).map(([day, orders]) => { const total = orders.reduce((sum, order) => sum + order.total, 0); const fees = orders.reduce((sum, order) => sum + (order.deliveryFee ?? 0), 0); const cash = orders.reduce((sum, order) => sum + (order.paymentMethod === "Carte" ? 0 : order.total), 0); return <div className="collect-day" key={day}><h3>COLLECT — {day}</h3><div className="collect-totals"><span>Livraisons terminées <b>{orders.length}</b></span><span>Total commandes <b>{total} DH</b></span><span>Frais livraison <b>{fees} DH</b></span><span>Espèces encaissées <b>{cash} DH</b></span></div>{orders.sort((first, second) => new Date(second.deliveredAt || second.createdAt) - new Date(first.deliveredAt || first.createdAt)).map((order) => <div className="collect-row" key={order.id}><span>#{order.id} · {new Date(order.deliveredAt || order.createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span><b>{order.total} DH</b><small>Livraison {order.deliveryFee ?? 0} DH · {order.paymentMethod || "Espèces"} · Encaissé {order.paymentMethod === "Carte" ? 0 : order.total} DH</small></div>)}</div>; }); }
 function OrderDetail({ order, onClose }) {
@@ -739,6 +953,13 @@ function OrderDetail({ order, onClose }) {
           >
             <span>
               {item.quantity} × {item.name}
+              {(item.size || item.sauce) && (
+                <small>
+                  {item.size ? `Taille: ${item.size}` : ""}
+                  {item.size && item.sauce ? " · " : ""}
+                  {item.sauce ? `Sauce: ${item.sauce}` : ""}
+                </small>
+              )}
               <small>{item.price} DH / unité</small>
             </span>
             <b>{item.price * item.quantity} DH</b>

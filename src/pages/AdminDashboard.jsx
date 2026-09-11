@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { listOrders, subscribeOrders } from "../ordersApi";
 const DEFAULT_ZONES = [
   { maxKm: 2, fee: 10 },
   { maxKm: 4, fee: 15 },
@@ -70,15 +71,6 @@ const defaultBranches = [
     },
   },
 ];
-
-const readOrders = () => {
-  try {
-    const data = JSON.parse(localStorage.getItem("hanaa-orders") || "[]");
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-};
 
 const normalizeZones = (savedZones) => {
   const saved = Array.isArray(savedZones) ? savedZones : [];
@@ -159,19 +151,34 @@ const branchNames = {
 };
 
 export default function AdminDashboard({ onNavigate }) {
-  const [orders, setOrders] = useState(readOrders);
+  const [orders, setOrders] = useState([]);
   const [branchSettings, setBranchSettings] = useState(readBranches);
   const [savedMessage, setSavedMessage] = useState("");
 
   useEffect(() => {
-    const sync = () => setOrders(readOrders());
+    let active = true;
 
-    window.addEventListener("storage", sync);
-    const timer = setInterval(sync, 4000);
+    const load = async () => {
+      try {
+        const next = await listOrders();
+        if (active) setOrders(next);
+      } catch (error) {
+        console.error("Admin Supabase sync failed:", error);
+      }
+    };
+
+    void load();
+
+    let unsubscribe = () => {};
+    try {
+      unsubscribe = subscribeOrders(() => void load());
+    } catch (error) {
+      console.error("Admin realtime start failed:", error);
+    }
 
     return () => {
-      window.removeEventListener("storage", sync);
-      clearInterval(timer);
+      active = false;
+      unsubscribe();
     };
   }, []);
 

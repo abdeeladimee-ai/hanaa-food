@@ -29,3 +29,259 @@
 .product-modal { position: relative; width: min(520px, 100%); max-height: 92vh; overflow: auto; background: #fff; border-radius: 15px; } .modal-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: #19191999; } .product-modal > img { width: 100%; height: 220px; object-fit: cover; } .close { position: absolute; top: 12px; right: 12px; z-index: 1; width: 30px; height: 30px; color: white; background: #191919aa; border-radius: 50%; font-size: 22px; cursor: pointer; } .modal-content { padding: 24px; } .modal-content h2 { margin: 7px 0; font-size: 24px; } .modal-content > p { color: #777; font-size: 13px; } .option-group { margin-top: 23px; } .option-group > label { margin-bottom: 10px; color: var(--ink); } .size-options { display: flex; gap: 8px; } .size-options button { flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; } .size-options button.active { color: white; background: var(--red); border-color: var(--red); } .size-options small { display: block; margin-top: 4px; font-size: 10px; } .extra-list { display: grid; gap: 7px; } .extra-list button { display: flex; align-items: center; gap: 9px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; text-align: left; cursor: pointer; } .extra-list button.selected { color: var(--red); border-color: var(--red); background: var(--soft); } .extra-list button b { margin-left: auto; font-size: 11px; } .modal-footer { display: flex; align-items: center; gap: 15px; margin-top: 25px; } .modal-footer .primary-action { flex: 1; display: flex; justify-content: space-between; }
 footer { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 30px max(5vw, 28px); color: #999; border-top: 1px solid var(--line); font-size: 12px; } footer strong { color: var(--ink); font-size: 17px; } footer button { color: #888; font-size: 11px; cursor: pointer; } .mobile-nav { display: none; }
 @media (max-width: 850px) { .navbar { height: 68px; padding: 0 18px; gap: 18px; } .address-pill { margin-left: auto; } nav button:not(.nav-cart) { display: none; } .hero { min-height: auto; padding: 55px 22px 40px; grid-template-columns: 1fr; gap: 30px; } .hero h1 { font-size: 44px; } .hero-art { width: min(78vw, 350px); } .menu-section, .simple-page { padding: 50px 18px 110px; } .section-heading { display: block; } .section-heading h2 { margin-bottom: 22px; font-size: 27px; } .search-box { width: 100%; } .product-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; } .product-image img { height: 140px; } .cart-layout { grid-template-columns: 1fr; } .summary { order: -1; } .cart-item { gap: 9px; } .item-total { display: none; } .form-grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } .order-history { flex-wrap: wrap; } .order-history .primary-action { width: 100%; } footer { display: grid; gap: 9px; text-align: center; } .admin-stats { grid-template-columns: repeat(2, 1fr); } .admin-order { display: grid; } .admin-actions { justify-content: start; } .mobile-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 5; display: flex; justify-content: space-around; padding: 9px 10px 7px; background: white; border-top: 1px solid var(--line); } .mobile-nav button { display: grid; gap: 3px; color: #888; text-align: center; font-size: 20px; cursor: pointer; } .mobile-nav small { font-size: 9px; } .floating-cart { right: 18px; bottom: 72px; left: 18px; } }
+
+
+/* HANAA SALADES CADREES START */
+.product-image[data-category="salades"] {
+  padding: 10px;
+  background: #151515;
+  overflow: hidden;
+}
+.product-image[data-category="salades"] img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  background: #111;
+  border: 2px solid #fff;
+  border-radius: 12px;
+  box-sizing: border-box;
+}
+@media (max-width: 700px) {
+  .product-image[data-category="salades"] {
+    padding: 7px;
+  }
+  .product-image[data-category="salades"] img {
+    border-radius: 9px;
+  }
+}
+/* HANAA SALADES CADREES END */
+
+
+/* HANAA TAPAS FIT START */
+.product-image[data-category="tapas"] {
+  padding: 8px;
+  background: #151515;
+  overflow: hidden;
+}
+.product-image[data-category="tapas"] img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  background: #151515;
+  border-radius: 10px;
+}
+@media (max-width: 700px) {
+  .product-image[data-category="tapas"] {
+    padding: 6px;
+  }
+}
+/* HANAA TAPAS FIT END */
+
+/* HANAA GRILLADES FIT START */
+.product-image[data-category="grillades"] {
+  padding: 7px;
+  overflow: hidden;
+  background: #171717;
+}
+.product-image[data-category="grillades"] img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 9px;
+}
+/* HANAA GRILLADES FIT END */
+
+
+/* HANAA PLATS FIT START */
+.product-image[data-category="plats"] {
+  padding: 7px;
+  overflow: hidden;
+  background: #171717;
+}
+.product-image[data-category="plats"] img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 9px;
+}
+/* HANAA PLATS FIT END */
+
+
+/* HANAA PLATS CLEAN FIX START */
+.product-image[data-category="plats"] {
+  padding: 0 !important;
+  background: #f5f5f5 !important;
+  overflow: hidden;
+}
+.product-image[data-category="plats"] img {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  object-fit: cover !important;
+  object-position: center !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+/* HANAA PLATS CLEAN FIX END */
+
+
+/* HANAA TACOS MINI CLEAN START */
+.product-image[data-category="tacos-classiques"],
+.product-image[data-category="mini-tacos"] {
+  padding: 0 !important;
+  background: #151515 !important;
+  overflow: hidden;
+}
+.product-image[data-category="tacos-classiques"] img,
+.product-image[data-category="mini-tacos"] img {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  object-fit: cover !important;
+  object-position: center !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.taco-sauce-first {
+  border: 1px solid #ef4444;
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff8f8;
+}
+/* HANAA TACOS MINI CLEAN END */
+
+
+
+/* HANAA SANDWICHS CLASSIQUES FIX2 START */
+.product-image[data-category="sandwichs-classiques"] {
+  padding: 0 !important;
+  background: #0f0f0f !important;
+  overflow: hidden;
+}
+.product-image[data-category="sandwichs-classiques"] img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  display: block !important;
+}
+/* HANAA SANDWICHS CLASSIQUES FIX2 END */
+
+/* HANAA SUPPLEMENT JUS START */
+.product-image[data-category="supplement-jus"] {
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #f5f5f5 !important;
+}
+.product-image[data-category="supplement-jus"] img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  display: block !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+/* HANAA SUPPLEMENT JUS END */
+
+/* HANAA DESSERTS START */
+.product-image[data-category="desserts"] {
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #f7f7f7 !important;
+}
+.product-image[data-category="desserts"] img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  display: block !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+/* HANAA DESSERTS END */
+
+/* HANAA SUPPLEMENTS CLEAN START */
+.product-image[data-category="supplements"] {
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #f6f6f6 !important;
+}
+.product-image[data-category="supplements"] img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  display: block !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+/* HANAA SUPPLEMENTS CLEAN END */
+
+/* HANAA BOISSONS OULMES FIX START */
+.product-image[data-category="boissons"] {
+  padding: 10px !important;
+  overflow: hidden !important;
+  background: #fff !important;
+}
+.product-image[data-category="boissons"] img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  display: block !important;
+  background: #fff !important;
+}
+/* HANAA BOISSONS OULMES FIX END */
+
+/* HANAA OULMES SINGLE START */
+.product-image[data-category="boissons"] img {
+  object-fit: contain !important;
+  object-position: center !important;
+  background: #fff !important;
+}
+/* HANAA OULMES SINGLE END */
+
+/* HANAA USER BOISSONS START */
+.product-image[data-category="boissons"] {
+  padding: 8px !important;
+  background: #fff !important;
+  overflow: hidden !important;
+}
+.product-image[data-category="boissons"] img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  background: #fff !important;
+  display: block !important;
+}
+/* HANAA USER BOISSONS END */
+
+/* HANAA OULMES SODA USER START */
+.product-image[data-category="boissons"] img {
+  object-fit: contain !important;
+  object-position: center !important;
+  background: #fff !important;
+}
+/* HANAA OULMES SODA USER END */
+
+/* HANAA POTATOES MAISON START */
+.product-image[data-category="supplements"] img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  display: block !important;
+}
+/* HANAA POTATOES MAISON END */
