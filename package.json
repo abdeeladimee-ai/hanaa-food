@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
     "leaflet": "^1.9.4",
+    "qz-tray": "^2.2.6",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
