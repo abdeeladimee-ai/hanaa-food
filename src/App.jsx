@@ -11,33 +11,32 @@ import AdminDirectory from "./pages/AdminDirectory";
 import Login from "./pages/Login";
 import { authorizedPath, getSession, homePathForRole } from "./auth";
 
+import { createOrder, getOrder, listOrders, subscribeOrder, subscribeOrders } from "./ordersApi";
 const routeViews = { "/login": "login", "/admin": "admin-dashboard", "/admin/commandes-livraison": "delivery-orders", "/admin/commandes-emporter": "pickup-orders", "/admin/livreurs": "driver-management", "/admin/utilisateurs": "user-management", "/snack": "snack-delivery", "/livreur": "driver" };
 
 const photo = (id) =>
   `https://images.unsplash.com/${id}?auto=format&fit=crop&w=900&q=82`;
 const categories = [
-  ["Menus", "menus"],
+  ["Salades", "salades"],
+  ["Pâtes", "pates"],
+  ["Pizzas", "pizzas"],
+  ["Pasticcios", "pasticcios"],
+  ["Tapas", "tapas"],
+  ["Wraps", "wraps"],
+  ["Grillades", "grillades"],
+  ["Plats", "plats"],
+  ["Burgers", "burgers"],
+  ["Sandwichs Classiques", "sandwichs-classiques"],
   ["Tacos Classiques", "tacos-classiques"],
   ["Mini Tacos Étudiants", "mini-tacos"],
   ["Tacos Spéciaux", "tacos-speciaux"],
-  ["Wraps", "wraps"],
-  ["Sandwichs Classiques", "sandwichs-classiques"],
   ["Sandwichs Spéciaux", "sandwichs-speciaux"],
   ["Bowls", "bowls"],
-  ["Burgers", "burgers"],
-  ["Pizzas", "pizzas"],
-  ["Tapas", "tapas"],
-  ["Salades", "salades"],
-  ["Pâtes", "pates"],
-  ["Pasticcios", "pasticcios"],
-  ["Plats", "plats"],
-  ["Grillades", "grillades"],
   ["Jus", "jus"],
   ["Supplément Jus", "supplement-jus"],
   ["Desserts", "desserts"],
   ["Suppléments", "supplements"],
-  ["Boissons", "boissons"],
-].map(([label, id]) => ({ label, id }));
+  ["Boissons", "boissons"],].map(([label, id]) => ({ label, id }));
 
 const defaultBranches = [
   {
@@ -211,367 +210,448 @@ const images = {
   pizza: "photo-1579751626657-72bc17010498",
   tapas: "photo-1541592106381-b31e9677c0e5",
 };
-const extras = [
-  { name: "Frites", price: 10 },
-  { name: "Soda", price: 6 },
-  { name: "Sauce", price: 3 },
-  { name: "Fromage", price: 3 },
-  { name: "Mozzarella", price: 5 },
-  { name: "Champignon frais", price: 8 },
-  { name: "Potatoes", price: 12 },
-];
+const extrasByCategory = {
+  "wraps": [
+    { name: "Frite", price: 10 },
+    { name: "Wrap gratiné", price: 10 },
+  ],
+  "burgers": [{ name: "Frite", price: 10 }],
+  "sandwichs-classiques": [{ name: "Frite", price: 10 }],
+  "tacos-classiques": [
+    { name: "Frite", price: 10 },
+    { name: "Tacos gratiné", price: 10 },
+  ],
+  "mini-tacos": [
+    { name: "Frite", price: 10 },
+    { name: "Tacos gratiné", price: 10 },
+  ],
+  "tacos-speciaux": [{ name: "Frite", price: 10 }],
+};
 const pastaVariants = ["Penne", "Spaghetti", "Tagliatelle"];
 const accompaniments = [
-  "Pâtes sauce champignon",
-  "Pâtes sauce blanche",
+  "Pâte sauce champignon",
+  "Pâte sauce blanche",
   "Riz",
   "Légumes sautés",
   "Frites",
   "Potatoes",
 ];
 const rawProducts = [
-  ["Menu Solo", "menus", 50, "Pizza N°24 (margherita, bolognaise, thon ou quatre fromage) + Cheese burger + Boisson 25 cl.", images.menus],
-  ["Menu Duo", "menus", 95, "Pizza N°29 (margherita, bolognaise, thon ou quatre fromage) + 2 Cheese burgers + Boisson 1 L.", images.menus],
-  ["Menu Crunchy", "menus", 95, "Plat Chicken + Tacos + Burger + Frites.", images.menus],
-  ["Menu Quatro", "menus", 120, "Pizza N°29 (margherita, bolognaise, thon ou quatre fromage) + 4 Cheese burgers + Boisson 1 L.", images.menus],
-  ["Menu Sekhawa", "menus", 125, "Pizza bolognaise + Plat Chicken + Tacos + Burger + Nuggets.", images.menus],
-
-  ["Poulet", "tacos-classiques", 30, "Tacos poulet.", images.tacos, { M: 30, L: 40, XL: 50 }],
-  ["Viande Hachée", "tacos-classiques", 35, "Tacos viande hachée.", images.tacos, { M: 35, L: 45, XL: 55 }],
-  ["Nuggets", "tacos-classiques", 30, "Tacos nuggets.", images.tacos, { M: 30, L: 40, XL: 50 }],
-  ["Cordon Bleu", "tacos-classiques", 30, "Tacos cordon bleu.", images.tacos, { M: 30, L: 40, XL: 55 }],
-  ["Hanaa Food", "tacos-classiques", 40, "Tacos signature Hanaa Food.", images.tacos, { M: 40, L: 50, XL: 65 }],
-  ["Mixte", "tacos-classiques", 40, "Tacos mixte.", images.tacos, { M: 40, L: 50, XL: 65 }],
-  ["Géant", "tacos-classiques", 40, "Tacos géant.", images.tacos, { M: 40, L: 50, XL: 65 }],
-
-  ["Poulet", "mini-tacos", 25, "Mini tacos étudiant poulet.", images.tacos],
-  ["Viande Hachée", "mini-tacos", 30, "Mini tacos étudiant viande hachée.", images.tacos],
-  ["Mixte", "mini-tacos", 35, "Mini tacos étudiant mixte.", images.tacos],
-
-  ["Chicken Cheesy Curry", "tacos-speciaux", 60, "Poulet mariné curry, nuggets, sauce fromagère, frite. Gratiné 3 fromages.", images.tacos],
-  ["Le BBR", "tacos-speciaux", 60, "Cordon bleu, viande hachée, jambon de dinde, oignon crispy, sauce fromagère, frite, sauce au choix. Gratiné Gouda.", images.tacos],
-  ["O'Capyk", "tacos-speciaux", 60, "Nuggets fromage, poulet curry, viande hachée, sauce fromagère, frite, sauce piquante. Gratiné cheddar.", images.tacos],
-  ["El Gringo", "tacos-speciaux", 60, "Poulet, tenders, nuggets, sauce Chili Tai, oignon crispy, sauce fromagère, frite. Gratiné cheddar mexicain.", images.tacos],
-  ["Le Suisse", "tacos-speciaux", 60, "Escalope de poulet, jambon de dinde, tenders, sauce fromagère, frite, oignon crispy. Gratiné gruyère.", images.tacos],
-  ["So' Raclette", "tacos-speciaux", 60, "Balls raclette, viande hachée, sauce sweet, onions, sauce fromagère, frite. Gratiné 2 fromages et charcuterie.", images.tacos],
-
-  ["Chicken Louisiane", "wraps", 35, "Crudité, tenders, sauce Big Mac, sauce fromagère.", images.wraps],
-  ["Chicken Onions", "wraps", 40, "Crudité, tenders, sauce Big Mac, sauce fromagère.", images.wraps],
-  ["El Dorado", "wraps", 65, "Viande hachée, œuf, rösti, jambon de dinde, cheddar, salade, tomate, sauce fromagère.", images.wraps],
-  ["Diablo", "wraps", 65, "Tenders, steak de viande hachée, nuggets fromage, salade, tomate, fromage mix, sauce cheddar et fromagère.", images.wraps],
-  ["Sovereign", "wraps", 70, "Nuggets, jambon de dinde, escalope de poulet, steak de viande hachée, tenders, fromage mix, salade, tomate, sauce cheddar et fromagère.", images.wraps],
-
-  ["Thon", "sandwichs-classiques", 20, "Sandwich classique thon.", images.wraps],
-  ["Nuggets", "sandwichs-classiques", 25, "Sandwich classique nuggets.", images.wraps],
-  ["Poulet", "sandwichs-classiques", 25, "Sandwich classique poulet.", images.wraps],
-  ["Viande Hachée", "sandwichs-classiques", 30, "Sandwich classique viande hachée.", images.wraps],
-  ["Mixte", "sandwichs-classiques", 30, "Sandwich classique mixte.", images.wraps],
-
-  ["Le Best", "sandwichs-speciaux", 60, "Steak V.H + escalope de poulet.", images.wraps],
-  ["Escabri", "sandwichs-speciaux", 60, "Escalope de poulet + fromage blanc.", images.wraps],
-  ["Zinger", "sandwichs-speciaux", 60, "Steak V.H + tenders + escalope de poulet.", images.wraps],
-  ["Phénomène", "sandwichs-speciaux", 45, "Poulet + cordon bleu.", images.wraps],
-  ["Quatro", "sandwichs-speciaux", 45, "Steak haché + œuf.", images.wraps],
-  ["Le Blindé", "sandwichs-speciaux", 45, "Steak V.H + cordon bleu.", images.wraps],
-  ["Triple Steak", "sandwichs-speciaux", 45, "Steak V.H + dinde fumée.", images.wraps],
-  ["Radical", "sandwichs-speciaux", 45, "Steak V.H + poulet mariné.", images.wraps],
-  ["Buffalo", "sandwichs-speciaux", 45, "Steak V.H + œuf + dinde fumée.", images.wraps],
-  ["Escalope du Chef", "sandwichs-speciaux", 40, "Poulet + champignon + sauce emmental.", images.wraps],
-  ["Steak Hachée", "sandwichs-speciaux", 40, "Steak haché.", images.wraps],
+  ["Marocaine", "salades", 25, "Laitue, tomate, oignon, poivron, olives noires, concombre, thon.", "/products/salades/marocaine.png"],
+  ["Niçoise", "salades", 30, "Laitue, concombre, carotte, betterave, pomme de terre, tomate, maïs, thon, oeuf.", "/products/salades/nicoise.png"],
+  ["Mexicaine", "salades", 35, "Tomate cerise, poivron, riz, maïs, fromage, thon, oeuf.", "/products/salades/mexicaine.png"],
+  ["César", "salades", 45, "Laitue romaine, crouton, parmesan, tomate cerise, poulet grillée.", "/products/salades/cesar.png"],
+  ["Hanaa Food", "salades", 55, "Tomate cerise, fruit de saison, salade vert, fromage, avocat, thon, surimi, calamar, crevette.", "/products/salades/hanaa-food.png"],
+  ["Poulet Champignon", "pates", 40, "Sauce blanche ou brune, fromage, champignon, poulet, ail.", images.pasta, pastaVariants],
+  ["Carbonara", "pates", 40, "Sauce blanche, parmesan, champignon, dinde fumée, ail.", images.pasta, pastaVariants],
+  ["Bolognaise", "pates", 45, "Sauce tomate, basilic, parmesan, viande hachée, ail.", images.pasta, pastaVariants],
+  ["Quatre Fromage", "pates", 45, "Sauce blanche, mozzarella, parmesan, fromage rouge et bleu.", images.pasta, pastaVariants],
+  ["Hanaa Food", "pates", 50, "Sauce blanche, basilic, champignon, parmesan, poulet, dinde fumée, ail.", images.pasta, pastaVariants],
+  ["Fruit de Mer", "pates", 65, "Sauce blanche ou sauce tomate, basilic, parmesan, crevette, sepia, ail.", images.pasta, pastaVariants],
+  ["Margherita", "pizzas", 25, "Pizza Margherita.", images.pizza, {"Medium": 25, "Sénior": 40}],
+  ["Végétarienne", "pizzas", 30, "Pizza Végétarienne.", images.pizza, {"Medium": 30, "Sénior": 45}],
+  ["Hot Dog", "pizzas", 25, "Pizza Hot Dog.", images.pizza, {"Medium": 25, "Sénior": 45}],
+  ["Thon", "pizzas", 30, "Pizza Thon.", images.pizza, {"Medium": 30, "Sénior": 50}],
+  ["Charcuterie", "pizzas", 30, "Pizza Charcuterie.", images.pizza, {"Medium": 30, "Sénior": 50}],
+  ["Poulet", "pizzas", 30, "Pizza Poulet.", images.pizza, {"Medium": 30, "Sénior": 60}],
+  ["Viande Hachée", "pizzas", 35, "Pizza Viande Hachée.", images.pizza, {"Medium": 35, "Sénior": 60}],
+  ["Suprême", "pizzas", 35, "Pizza Suprême.", images.pizza, {"Medium": 35, "Sénior": 60}],
+  ["Pepperoni", "pizzas", 30, "Pizza Pepperoni.", images.pizza, {"Medium": 30, "Sénior": 60}],
+  ["Quatre Fromage", "pizzas", 35, "Pizza Quatre Fromage.", images.pizza, {"Medium": 35, "Sénior": 60}],
+  ["Quatre Saisons", "pizzas", 35, "Pizza Quatre Saisons.", images.pizza, {"Medium": 35, "Sénior": 60}],
+  ["Napolitaine", "pizzas", 35, "Pizza Napolitaine.", images.pizza, {"Medium": 35, "Sénior": 60}],
+  ["Calzon", "pizzas", 30, "Pizza Calzon.", images.pizza, {"Medium": 30, "Sénior": 45}],
+  ["Fruits de Mer", "pizzas", 35, "Pizza Fruits de Mer.", images.pizza, {"Medium": 35, "Sénior": 60}],
+  ["Hot Dog", "pasticcios", 30, "Pasticcio Hot Dog.", "/products/pasticcios/hot-dog.png"],
+  ["Charcuterie", "pasticcios", 35, "Pasticcio Charcuterie.", "/products/pasticcios/charcuterie.png"],
+  ["Poulet", "pasticcios", 35, "Pasticcio Poulet.", "/products/pasticcios/poulet.png"],
+  ["Viande Hachée", "pasticcios", 35, "Pasticcio Viande Hachée.", "/products/pasticcios/viande-hachee.png"],
+  ["Mixte", "pasticcios", 40, "Pasticcio Mixte.", "/products/pasticcios/mixte.png"],
+  ["Hanaa Food", "pasticcios", 45, "Pasticcio Hanaa Food.", "/products/pasticcios/hanaa-food.png"],
+  ["Nuggets", "tapas", 15, "Nuggets croustillants.", "/products/tapas/nuggets.png", { "4 pièces": 15, "8 pièces": 25 }],
+  ["Oignon Rings", "tapas", 15, "Oignon Rings croustillants.", "/products/tapas/onion-rings.png", {"4 pièces": 15, "8 pièces": 25}],
+  ["Stick Mozza", "tapas", 20, "Sticks mozzarella croustillants.", "/products/tapas/stick-mozza.png", { "4 pièces": 20, "8 pièces": 35 }],
+  ["Wings", "tapas", 20, "Chicken wings croustillantes.", "/products/tapas/wings.png", { "4 pièces": 20, "8 pièces": 35 }],
+  ["Fries Cheese", "tapas", 20, "Frites avec fromage.", "/products/tapas/fries-cheese.png"],
+  ["Chicken Louisiane", "wraps", 35, "Crudité, tenders, sauce Big Mac, sauce fromagère.", "/products/wraps/chicken-louisiane.png"],
+  ["Chicken Onions", "wraps", 45, "Crudité, tenders, onion crispy rings, sauce Magic Onion, sauce fromagère, sauce cheddar.", "/products/wraps/chicken-onions.png"],
+  ["Eldorado", "wraps", 65, "Viande hachée, œuf, rösti, jambon de dinde, cheddar, salade, tomate, sauce fromagère.", "/products/wraps/eldorado.png"],
+  ["Diablo", "wraps", 65, "Tenders, steak de viande hachée, nuggets fromage, salade, tomate, fromage mix, sauce cheddar et fromagère.", "/products/wraps/diablo.png"],
+  ["Sovereign", "wraps", 70, "Tenders, nuggets, steak de viande hachée, jambon de dinde, salade, escalope de poulet, fromage mix, tomate, sauce cheddar et fromagère.", "/products/wraps/sovereign.png"],
+  ["Brochettes Poulet", "grillades", 50, "Brochettes de poulet grillées.", "/products/grillades/brochettes-poulet.png"],
+  ["Brochettes Viande Hachée", "grillades", 60, "Brochettes de viande hachée grillées.", "/products/grillades/brochettes-viande-hachee.png"],
+  ["Brochettes Mixte", "grillades", 65, "Brochettes mixtes grillées.", "/products/grillades/brochettes-mixte.png"],
+  ["Chicken Eco", "plats", 35, "Poulet pané avec accompagnements au choix.", "/products/plats/chicken-eco-v2.png"],
+  ["Chicken Hanaa Food", "plats", 50, "Poulet croustillant Hanaa Food avec accompagnements au choix.", "/products/plats/chicken-hanaa-food-v2.png"],
+  ["Chicken Tandoori", "plats", 60, "Poulet tandoori grillé avec accompagnements au choix.", "/products/plats/chicken-tandoori-v2.png"],
+  ["Poulet Parmigiana", "plats", 60, "Poulet parmigiana gratiné avec accompagnements au choix.", "/products/plats/poulet-parmigiana-v2.png"],
+  ["Emincé de Poulet", "plats", 60, "Émincé de poulet crémeux avec accompagnements au choix.", "/products/plats/emince-de-poulet-v2.png"],
+  ["Escalope de Poulet Milanaise", "plats", 60, "Escalope de poulet milanaise avec accompagnements au choix.", "/products/plats/escalope-milanaise-v2.png"],
+  ["Cordon Bleu", "plats", 60, "Cordon bleu croustillant avec accompagnements au choix.", "/products/plats/cordon-bleu-v2.png"],
+  ["Plat Fitnesse", "plats", 60, "Assiette healthy avec accompagnements au choix.", "/products/plats/plat-fitnesse-v2.png"],
+  ["Mini Cheese", "burgers", 20, "Steak Hachée, cheddar, ketchup, cornichons, oignons.", "/products/burgers/mini-cheese.png"],
+  ["Cheese Burger", "burgers", 30, "Steak Hachée, cheddar, salade, tomate, oignons, sce burger.", "/products/burgers/cheese-burger.png"],
+  ["Chicken", "burgers", 30, "Filet de poulet panée, salade, tomate, mayonnaise.", "/products/burgers/chicken.png"],
+  ["Cheese Omelette", "burgers", 35, "Steak Hachée, omelette, cheddar, ketchup, mayonnaise, oignons.", "/products/burgers/cheese-omelette.png"],
+  ["Crispy Chicken", "burgers", 40, "Poulet croustillant, salade, sce épicée.", "/products/burgers/crispy-chicken.png"],
+  ["Fish", "burgers", 40, "Filet de poisson pané, salade, sce tartare.", "/products/burgers/fish.png"],
+  ["Chicken Rosti", "burgers", 40, "Poulet pané, rosti, cheddar, salade, sce burger.", "/products/burgers/chicken-rosti.png"],
+  ["Big Mac", "burgers", 45, "Double Steak, cheddar, salade, cornichons, sce spéciale.", "/products/burgers/big-mac.png"],
+  ["Boeuf Rosti", "burgers", 45, "Steak Hachée, rosti, cheddar, salade, sce burger.", "/products/burgers/boeuf-rosti.png"],
+  ["Double Chicken", "burgers", 45, "Double poulet pané, cheddar, salade, sce burger.", "/products/burgers/double-chicken.png"],
+  ["Texas", "burgers", 50, "Steak Hachée, bacon, cheddar, oignons rings, sce BBQ.", "/products/burgers/texas.png"],
+  ["Le King", "burgers", 50, "Steak Hachée, bacon, cheddar, oignons, salade, sce spéciale.", "/products/burgers/le-king.png"],
+  ["L'Empereur du Chicken", "burgers", 75, "Filet de poulet mariné, maïs doux, oignons caramélisés, laitue, fromage, avocat, guacamole, mozzarella chunk.", images.burgers],
+  ["Big Flame", "burgers", 75, "Steaks de bœuf smashé, salami halal grillé, escalopes de poulet crunchy, oignons rouges caramélisés, sce flame et sce BBQ.", images.burgers],
+  ["Imperial Stack", "burgers", 90, "Steaks de v. hachée, salami halal grillé, escalopes de poulet crunchy, œuf au plat, oignons caramélisés, légumes frais de saison, sce cheddar fumée.", images.burgers],
+  ["The Emperor", "burgers", 90, "Double steak smashé, salami halal grillé, filet crispy géant, triple cheddar fondu, légumes frais de saison, oignons rings caramélisés, sce impériale premium.", images.burgers],
+  ["Thon", "sandwichs-classiques", 20, "", "/products/sandwichs-classiques/thon.png"],
+  ["Nuggets", "sandwichs-classiques", 25, "", "/products/sandwichs-classiques/nuggets.png"],
+  ["Poulet", "sandwichs-classiques", 25, "", "/products/sandwichs-classiques/poulet.png"],
+  ["Viande Hachée", "sandwichs-classiques", 30, "", "/products/sandwichs-classiques/viande-hachee.png"],
+  ["Mixte", "sandwichs-classiques", 30, "", "/products/sandwichs-classiques/mixte.png"],
+  ["Canibal", "sandwichs-speciaux", 80, "Cordon bleu croustillant, poulet croustillant aux corn flakes, Steak V.H, poulet à la crème et champignons, galette pomme de terre.", images.wraps],
+  ["Psychopat", "sandwichs-speciaux", 80, "Chicken moza pané, mozzarella sticks, nuggets camenbert, nuggets jalapenos cheddar, chicken rings.", images.wraps],
+  ["Boeuf Titanesque", "sandwichs-speciaux", 65, "Boeuf grillé, Cheddar, Fromage de chèvre, Miel, Laitue, Tomate.", images.wraps],
+  ["Poulet Titanesque", "sandwichs-speciaux", 60, "Poulet grillé, Cheddar, Fromage de chèvre, Miel, Laitue, Tomate.", images.wraps],
+  ["Le Best", "sandwichs-speciaux", 60, "Steak V.H, Escalope de Poulet.", images.wraps],
+  ["Escabri", "sandwichs-speciaux", 60, "Escalope de Poulet, Fromage blanc.", images.wraps],
+  ["Zinger", "sandwichs-speciaux", 60, "Steak V.H, Tenders, Escalope de Poulet.", images.wraps],
+  ["Phénomène", "sandwichs-speciaux", 45, "Poulet, Cordon bleu.", images.wraps],
+  ["Buffalo", "sandwichs-speciaux", 45, "Steak V.H, Œuf, Dinde Fumée.", images.wraps],
+  ["Quatro", "sandwichs-speciaux", 45, "Steak V.H, Œuf.", images.wraps],
+  ["Le Blindé", "sandwichs-speciaux", 45, "Steak V.H, Cordon bleu.", images.wraps],
+  ["Triple Steak", "sandwichs-speciaux", 45, "Steak V.H, Dinde fumée.", images.wraps],
+  ["Radical", "sandwichs-speciaux", 45, "Steak V.H, Poulet mariné.", images.wraps],
+  ["Escalope du Chef", "sandwichs-speciaux", 40, "Poulet, Champignon, sce emmental.", images.wraps],
+  ["Steak Hachée", "sandwichs-speciaux", 40, "Steak V.H.", images.wraps],
   ["Méga Fish", "sandwichs-speciaux", 40, "Poisson crispy.", images.wraps],
+  ["Mexicain", "sandwichs-speciaux", 40, "Cuisse de Dinde, Poivron & oignon.", images.wraps],
   ["Méga Chicken", "sandwichs-speciaux", 40, "Poulet crispy.", images.wraps],
   ["Chicken Mixte", "sandwichs-speciaux", 45, "Épices tandoori et curry.", images.wraps],
   ["Chicken Jaune", "sandwichs-speciaux", 40, "Épices curry.", images.wraps],
-  ["Chicken Blanc", "sandwichs-speciaux", 40, "Crème fraîche.", images.wraps],
   ["Chicken Rouge", "sandwichs-speciaux", 40, "Épices tandoori.", images.wraps],
-  ["Mexicain", "sandwichs-speciaux", 40, "Cuisse de dinde, poivron et oignon.", images.wraps],
-  ["Hot Mixte", "sandwichs-speciaux", 35, "Steak haché + hot dog.", images.wraps],
-  ["Cordon Bleu", "sandwichs-speciaux", 35, "Cordon bleu.", images.wraps],
-
-  ["Fondon", "bowls", 60, "Poulet, chicken crispy, onion rings, oignon crispy, sauce cheddar, frite, sauce fromagère.", images.bowls],
-  ["New-York", "bowls", 60, "Tenders, jambon de dinde, nuggets, oignon crispy, sauce cheddar, frite, sauce fromagère.", images.bowls],
-  ["Chicken Riz", "bowls", 50, "Chicken crispy, riz, sauce cheddar, sauce fromagère, oignon crispy.", images.bowls],
-  ["Mix Match", "bowls", 60, "Nuggets fromage, jambon de dinde, viande hachée, poulet, oignon crispy, sauce cheddar, frite, sauce fromagère.", images.bowls],
-  ["Veggie", "bowls", 60, "Bowl veggie Hanaa Food.", images.bowls],
-
-  ["Mini Cheese", "burgers", 20, "Mini cheese burger.", images.burgers],
-  ["Cheese Burger", "burgers", 30, "Cheese burger.", images.burgers],
-  ["Chicken", "burgers", 30, "Burger chicken.", images.burgers],
-  ["Cheese Omelette", "burgers", 35, "Burger cheese omelette.", images.burgers],
-  ["Crispy Chicken", "burgers", 40, "Burger crispy chicken.", images.burgers],
-  ["Fish", "burgers", 40, "Burger fish.", images.burgers],
-  ["Chicken Rosti", "burgers", 40, "Burger chicken rösti.", images.burgers],
-  ["Big Mac", "burgers", 45, "Burger Big Mac.", images.burgers],
-  ["Boeuf Rosti", "burgers", 45, "Burger bœuf rösti.", images.burgers],
-  ["Double Chicken", "burgers", 45, "Burger double chicken.", images.burgers],
-  ["Texas", "burgers", 50, "Burger Texas.", images.burgers],
-  ["Le King", "burgers", 50, "Burger Le King.", images.burgers],
-
-  ["Marocaine", "salades", 25, "Laitue, tomate, oignon, poivron, olives noires, concombre, thon.", images.salads],
-  ["Niçoise", "salades", 30, "Laitue, concombre, carotte, betterave, pomme de terre, tomate, maïs, thon, œuf.", images.salads],
-  ["Mexicaine", "salades", 35, "Tomate cerise, poivron, riz, fromage, maïs, thon, œuf.", images.salads],
-  ["César", "salades", 40, "Laitue romaine, croûton, parmesan, tomate cerise, poulet grillé.", images.salads],
-  ["Hanaa Food", "salades", 55, "Tomate cerise, salade verte, fromage, avocat, fruit de saison, thon, surimi, calamar, crevette.", images.salads],
-
-  ["Poulet Champignon", "pates", 35, "Sauce blanche ou brune, fromage, champignon, poulet, ail.", images.pasta, pastaVariants],
-  ["Carbonara", "pates", 35, "Sauce blanche, parmesan, champignon, dinde fumée, ail.", images.pasta, pastaVariants],
-  ["Quatre Fromage", "pates", 40, "Sauce blanche, mozzarella, parmesan, fromage rouge, fromage bleu.", images.pasta, pastaVariants],
-  ["Bolognaise", "pates", 40, "Sauce tomate, parmesan, basilic, viande hachée, ail.", images.pasta, pastaVariants],
-  ["Hanaa Food", "pates", 45, "Sauce blanche, basilic, champignon, parmesan, poulet, dinde fumée, ail.", images.pasta, pastaVariants],
-  ["Fruit de Mer", "pates", 50, "Sauce blanche ou sauce tomate, basilic, parmesan, crevette, seiche, ail.", images.pasta, pastaVariants],
-  ["Lasagne", "pates", 45, "Sauce béchamel, basilic, viande hachée.", images.pasta],
-
-  ["Hot Dog", "pasticcios", 30, "Pasticcio hot dog.", images.plated],
-  ["Charcuterie", "pasticcios", 35, "Pasticcio charcuterie.", images.plated],
-  ["Poulet", "pasticcios", 35, "Pasticcio poulet.", images.plated],
-  ["Viande Hachée", "pasticcios", 35, "Pasticcio viande hachée.", images.plated],
-  ["Mixte", "pasticcios", 40, "Pasticcio mixte.", images.plated],
-  ["Hanaa Food", "pasticcios", 45, "Pasticcio Hanaa Food.", images.plated],
-
-  ["Chicken Eco", "plats", 35, "Plat Chicken Eco. Servi avec deux accompagnements au choix.", images.plated],
-  ["Chicken Hanaa Food", "plats", 50, "Plat Chicken Hanaa Food. Servi avec deux accompagnements au choix.", images.plated],
-  ["Chicken Tandoori", "plats", 60, "Plat Chicken Tandoori. Servi avec deux accompagnements au choix.", images.plated],
-  ["Poulet Parmigiana", "plats", 60, "Poulet Parmigiana. Servi avec deux accompagnements au choix.", images.plated],
-  ["Émincé de Poulet", "plats", 60, "Émincé de poulet. Servi avec deux accompagnements au choix.", images.plated],
-  ["Escalope de Poulet Milanaise", "plats", 60, "Escalope de poulet milanaise. Servie avec deux accompagnements au choix.", images.plated],
-  ["Cordon Bleu", "plats", 60, "Cordon bleu. Servi avec deux accompagnements au choix.", images.plated],
-  ["Suprême de Poulet", "plats", 60, "Suprême de poulet. Servi avec deux accompagnements au choix.", images.plated],
-  ["Plat Fitness", "plats", 60, "Plat fitness. Servi avec deux accompagnements au choix.", images.plated],
-
-  ["Brochettes Poulet", "grillades", 50, "Brochettes poulet. Servies avec deux accompagnements au choix.", images.grill],
-  ["Brochettes Viande Hachée", "grillades", 60, "Brochettes viande hachée. Servies avec deux accompagnements au choix.", images.grill],
-  ["Brochettes Mixte", "grillades", 65, "Brochettes mixtes. Servies avec deux accompagnements au choix.", images.grill],
-
-
-  ["Hot Dog", "pizzas", 25, "Pizza Hot Dog.", images.pizza],
-  ["Margharita", "pizzas", 25, "Pizza Margharita.", images.pizza],
-  ["Poulet", "pizzas", 30, "Pizza Poulet.", images.pizza],
-  ["Thon", "pizzas", 30, "Pizza Thon.", images.pizza],
-  ["Charcuterie", "pizzas", 30, "Pizza Charcuterie.", images.pizza],
-  ["Pepperoni", "pizzas", 30, "Pizza Pepperoni.", images.pizza],
-  ["Quatre Fromage", "pizzas", 35, "Pizza Quatre Fromage.", images.pizza],
-  ["Quatre Saisons", "pizzas", 35, "Pizza Quatre Saisons.", images.pizza],
-  ["Suprême", "pizzas", 35, "Pizza Suprême.", images.pizza],
-  ["Viande Hachée", "pizzas", 35, "Pizza Viande Hachée.", images.pizza],
-  ["Calzon", "pizzas", 35, "Pizza Calzon.", images.pizza],
-
-  ["Nuggets", "tapas", 15, "Tapas nuggets.", images.tapas],
-  ["Oignon rings", "tapas", 15, "Tapas oignon rings.", images.tapas],
-  ["Stick mozza", "tapas", 20, "Tapas stick mozzarella.", images.tapas],
-
-  ["Détox", "jus", 12, "Jus détox.", images.juice],
-  ["Orange", "jus", 15, "Jus d'orange.", images.juice],
-  ["Banane", "jus", 15, "Jus banane.", images.juice],
-  ["Pomme", "jus", 15, "Jus pomme.", images.juice],
-  ["Papaye", "jus", 20, "Jus papaye.", images.juice],
-  ["Fraise", "jus", 20, "Jus fraise.", images.juice],
-  ["Ananas", "jus", 20, "Jus ananas.", images.juice],
-  ["Mangue", "jus", 20, "Jus mangue.", images.juice],
-  ["Panaché", "jus", 20, "Jus panaché.", images.juice],
-  ["Exotique", "jus", 20, "Jus exotique.", images.juice],
-  ["Avocat", "jus", 20, "Jus avocat.", images.juice],
-  ["Avocat fruit sec", "jus", 25, "Jus avocat avec fruits secs.", images.juice],
-  ["Avocat Oreo", "jus", 25, "Jus avocat Oreo.", images.juice],
-  ["Avocat Kit Kat", "jus", 25, "Jus avocat Kit Kat.", images.juice],
-  ["Protéine", "jus", 35, "Jus protéiné.", images.juice],
-
-  ["Scoop Protein Weight", "supplement-jus", 15, "Supplément jus.", images.juice],
-  ["Scoop Protein Mass", "supplement-jus", 15, "Supplément jus.", images.juice],
-  ["Fruits sec", "supplement-jus", 10, "Supplément fruits secs.", images.juice],
-  ["Flocon d'avoine", "supplement-jus", 5, "Supplément flocons d'avoine.", images.juice],
-
-  ["Salade de fruit", "desserts", 20, "Salade de fruits.", images.dessert],
-  ["Tiramisu", "desserts", 20, "Tiramisu.", images.dessert],
-  ["Panna Cotta", "desserts", 15, "Panna cotta.", images.dessert],
-  ["Cheese Cake", "desserts", 20, "Cheesecake.", images.dessert],
-
-  ["Pain maison", "supplements", 3, "Supplément pain maison.", images.plated],
-  ["Sauce", "supplements", 3, "Supplément sauce.", images.plated],
-  ["Fromage", "supplements", 3, "Supplément fromage.", images.plated],
-  ["Mozzarella", "supplements", 5, "Supplément mozzarella.", images.plated],
-  ["Champignon frais", "supplements", 8, "Supplément champignon frais.", images.plated],
-  ["Frite", "supplements", 10, "Supplément frites.", images.plated],
-  ["Potatoes", "supplements", 12, "Supplément potatoes.", images.plated],
-  ["Légumes sautés", "supplements", 15, "Supplément légumes sautés.", images.plated],
-  ["Pâte", "supplements", 25, "Supplément pâtes.", images.plated],
-  ["Risotto", "supplements", 25, "Supplément risotto.", images.plated],
-  ["Sauce champignon", "supplements", 10, "Supplément sauce champignon.", images.plated],
-  ["Brochette poulet", "supplements", 10, "Supplément brochette poulet.", images.grill],
-  ["Brochette V. Hachée", "supplements", 10, "Supplément brochette viande hachée.", images.grill],
-  ["Brochette merguez", "supplements", 10, "Supplément brochette merguez.", images.grill],
-  ["Chicken", "supplements", 10, "Supplément chicken.", images.plated],
-
-  ["Soda 25 cl Coca/Fanta/Sprite", "boissons", 6, "Soda 25 cl.", images.drink],
-  ["Soda 25 cl Hawai/Poms", "boissons", 8, "Soda 25 cl.", images.drink],
-  ["Soda 33 cl", "boissons", 10, "Soda 33 cl.", images.drink],
-  ["Soda 1 L", "boissons", 12, "Soda 1 litre.", images.drink],
-  ["Eau", "boissons", 5, "Eau.", images.drink],
-  ["Énergie Oasis", "boissons", 18, "Boisson énergie Oasis.", images.drink],
-  ["Oulmes Eau", "boissons", 6, "Oulmes eau.", images.drink],
-  ["Oulmes Soda", "boissons", 10, "Oulmes soda.", images.drink],
+  ["Chicken Blanc", "sandwichs-speciaux", 40, "Crème fraiche.", images.wraps],
+  ["Hot Mixte", "sandwichs-speciaux", 35, "Steak Hachée, Hot dog.", images.wraps],
+  ["Cordon Bleu", "sandwichs-speciaux", 35, "", images.wraps],
+  ["Poulet", "tacos-classiques", 30, "Tacos poulet.", "/products/tacos-classiques/poulet.png", { M: 30, L: 40, XL: 50 }],
+  ["Nuggets", "tacos-classiques", 30, "Tacos nuggets.", "/products/tacos-classiques/nuggets.png", { M: 30, L: 40, XL: 50 }],
+  ["Cordon Bleu", "tacos-classiques", 30, "Tacos cordon bleu.", "/products/tacos-classiques/cordon-bleu.png", { M: 30, L: 40, XL: 55 }],
+  ["Viande Hachée", "tacos-classiques", 35, "Tacos viande hachée.", "/products/tacos-classiques/viande-hachee.png", { M: 35, L: 45, XL: 55 }],
+  ["Mixte", "tacos-classiques", 40, "Tacos mixte.", "/products/tacos-classiques/mixte.png", { M: 40, L: 50, XL: 65 }],
+  ["Hanaa Food", "tacos-classiques", 40, "Tacos signature Hanaa Food.", "/products/tacos-classiques/hanaa-food.png", { M: 40, L: 50, XL: 65 }],
+  ["Géant", "tacos-classiques", 30, "Tacos géant.", "/products/tacos-classiques/geant.png", { M: 30, L: 40, XL: 55 }],
+  ["Poulet", "mini-tacos", 25, "Mini tacos étudiant poulet.", "/products/mini-tacos/mini-poulet.png"],
+  ["Viande Hachée", "mini-tacos", 30, "Mini tacos étudiant viande hachée.", "/products/mini-tacos/mini-viande-hachee.png"],
+  ["Mixte", "mini-tacos", 35, "Mini tacos étudiant mixte.", "/products/mini-tacos/mini-mixte.png"],
+  ["Chicken Cheesy Curry", "tacos-speciaux", 60, "Poulet mariné curry, Nuggets, Sauce Fromagère, Frite. Gratinée 3 Fromages.", images.tacos],
+  ["Le BBR", "tacos-speciaux", 60, "Cordon Bleu, Viande Hachée, Jambon de Dinde, Onion Crispy, Sce Fromagère, Frite, Sce au choix. Gratinée Gouda.", images.tacos],
+  ["O'Capik", "tacos-speciaux", 60, "Nuggets fromage, Poulet curry, V. Hachée, Sce Fromagère, Frite, Sce piquante. Gratinée Cheddar.", images.tacos],
+  ["El Gringo", "tacos-speciaux", 60, "Poulet, Tenders, Nuggets, Sce Chili Tai, Onion Crispy, Sce Fromagère, Frite. Gratinée Cheddar Mexicain.", images.tacos],
+  ["Le Suisse", "tacos-speciaux", 60, "Escalope de poulet, Tenders, Jambon de Dinde, Sce Fromagère, Frite, Onion Crispy. Gratinée Gruyère tranche de Poulet.", images.tacos],
+  ["So' Raclette", "tacos-speciaux", 60, "Balls Raclette, V. Hachée, Frite, Sce Sweet Onions, Sce Fromagère.", images.tacos],
+  ["Double Chicken", "tacos-speciaux", 65, "Nuggets, tenders, Cheddar, oignons caramélisés, sce algérienne.", images.tacos],
+  ["O'Crost!", "tacos-speciaux", 65, "Galette pomme de terre, V. Hachée, oignons caramélisés, sce barbecue.", images.tacos],
+  ["Le Gourmand", "tacos-speciaux", 75, "V. Hachée, Dinde fumée, Camembert, Sce miel moutarde, oignons caramélisés.", images.tacos],
+  ["La Zomba X", "tacos-speciaux", 90, "Steak mozza, V. Hachée, Pepperoni, Galette pomme de terre, doritos croustillant, Nuggets jalapenos cheese.", images.tacos],
+  ["Chicken Riz", "bowls", 50, "Chicken Crispy, Onion Crispy, Riz, Sauce Cheddar, Sauce Fromagère.", images.bowls],
+  ["Fondon", "bowls", 60, "Poulet, Chicken crispy, Frite, Onion rings, Onion Crispy, Sce Cheddar, Sce Fromagère.", images.bowls],
+  ["New-York", "bowls", 60, "Jambon de Dinde, Onion Crispy, Tenders, Nuggets, Sce Cheddar, Frite, Sce Fromagère.", images.bowls],
+  ["Mix Match", "bowls", 60, "Nuggets fromage, Jambon de Dinde, Poulet, V. Hachée, Onion Crispy, Frite, Sce Cheddar, Sce Fromagère.", images.bowls],
+  ["Veggie", "bowls", 60, "Cordon Bleu, Jambon de Dinde, Onion Crispy, Chicken crispy, Frite, Sce Cheddar, Sce Fromagère.", images.bowls],
+  ["Le Sort Bowl", "bowls", 90, "Escalope de poulet, Camembert pané, Nuggets, Frite, Onion Crispy, Sce emmental aux champignons, Sce Cheddar, Sce Fromagère.", images.bowls],
+  ["Matrice Bowl", "bowls", 90, "Poulet mariné du chef, Jambon de dinde, Nuggets, Frite, Mozza sticks, Onion Caramélisés, Jalapenos, Sce Cheddar, Sce Fromagère.", images.bowls],
+  ["Détox", "jus", 12, "", "/products/jus/detox.png"],
+  ["Orange", "jus", 15, "", "/products/jus/orange.png"],
+  ["Banane", "jus", 15, "", "/products/jus/banane.png"],
+  ["Pomme", "jus", 15, "", "/products/jus/pomme.png"],
+  ["Papaye", "jus", 20, "", "/products/jus/papaye.png"],
+  ["Fraise", "jus", 20, "", "/products/jus/fraise.png"],
+  ["Ananas", "jus", 20, "", "/products/jus/ananas.png"],
+  ["Mangue", "jus", 20, "", "/products/jus/mangue.png"],
+  ["Panaché", "jus", 20, "", "/products/jus/panache.png"],
+  ["Exotique", "jus", 20, "", "/products/jus/exotique.png"],
+  ["Avocat", "jus", 20, "", "/products/jus/avocat.png"],
+  ["Avocat Fruit Sec", "jus", 25, "", "/products/jus/avocat-fruit-sec.png"],
+  ["Avocat Oreo", "jus", 25, "", "/products/jus/avocat-oreo.png"],
+  ["Avocat Kit Kat", "jus", 25, "", "/products/jus/avocat-kit-kat.png"],
+  ["Protéine", "jus", 35, "", "/products/jus/proteine.png"],
+  ["Whey", "supplement-jus", 15, "Supplément jus.", "/products/supplement-jus/whey.png"],
+  ["Mass Tech", "supplement-jus", 15, "Supplément jus.", "/products/supplement-jus/mass-tech.png"],
+  ["Fruits sec", "supplement-jus", 15, "Supplément jus.", "/products/supplement-jus/fruits-sec.png"],
+  ["Flocon d'Avoine", "supplement-jus", 15, "Supplément jus.", "/products/supplement-jus/flocon-avoine.png"],
+  ["Salade Fruit", "desserts", 20, "", images.dessert],
+  ["Panna Cotta", "desserts", 15, "Dessert Hanaa Food.", "/products/desserts/panna-cotta.png"],
+  ["Tiramisu", "desserts", 20, "Dessert Hanaa Food.", "/products/desserts/tiramisu.png"],
+  ["Cheese Cake", "desserts", 20, "Dessert Hanaa Food.", "/products/desserts/cheesecake.png"],
+  ["Pain maison", "supplements", 3, "Supplément Hanaa Food.", "/products/supplements/pain-maison.png"],
+  ["Sauce", "supplements", 3, "Supplément Hanaa Food.", "/products/supplements/sauce.png"],
+  ["Fromage", "supplements", 3, "Supplément Hanaa Food.", "/products/supplements/fromage.png"],
+  ["Mozzarella", "supplements", 5, "Supplément Hanaa Food.", "/products/supplements/mozzarella.png"],
+  ["Champignon frais", "supplements", 8, "Supplément Hanaa Food.", "/products/supplements/champignon-frais.png"],
+  ["Frite", "supplements", 10, "Supplément Hanaa Food.", "/products/supplements/frites.png"],
+  ["Potatoes Maison", "supplements", 15, "Quartiers de pommes de terre assaisonnés.", "/products/supplements/potatoes-maison.png"],
+  ["Légumes sautés", "supplements", 15, "Supplément Hanaa Food.", "/products/supplements/legumes-sautes.png"],
+  ["Sauce champignon", "supplements", 15, "Supplément Hanaa Food.", "/products/supplements/sauce-champignon.png"],
+  ["Brochette poulet", "supplements", 15, "Supplément Hanaa Food.", "/products/supplements/brochette-poulet.png"],
+  ["Brochette V. Hachée", "supplements", 20, "Supplément Hanaa Food.", "/products/supplements/brochette-viande-hachee.png"],
+  ["Poulet", "supplements", 15, "Supplément Hanaa Food.", "/products/supplements/poulet.png"],
+  ["Pâte", "supplements", 15, "Supplément Hanaa Food.", "/products/supplements/pate.png"],
+  ["Risotto", "supplements", 20, "Supplément Hanaa Food.", "/products/supplements/risotto.png"],
+  ["Gouda / Edam", "supplements", 10, "Supplément Hanaa Food.", "/products/supplements/gouda-edam.png"],
+  ["Soda 25 cl Coca/Fanta/Sprite", "boissons", 6, "Boisson.", "/products/boissons/soda-25cl.jpg"],
+  ["Soda 25 cl Hawai/Poms", "boissons", 8, "Boisson.", "/products/boissons/hawai-poms.jpg"],
+  ["Soda 33 cl", "boissons", 10, "Boisson.", "/products/boissons/soda-33cl.jpg"],
+  ["Soda 1 L", "boissons", 12, "Boisson.", "/products/boissons/soda-1l.jpg"],
+  ["Eau", "boissons", 5, "Boisson.", "/products/boissons/sidi-ali-user.png"],
+  ["Oulmes Eau", "boissons", 6, "Oulmès 50cl.", "/products/boissons/oulmes-eau-single.png"],
+  ["Soda d'Oulmes", "boissons", 10, "Oulmès Tropical.", "/products/boissons/oulmes-soda-user.png"],
 ];
 
 const productImageMap = {
-  "menus|Menu Solo": "/products/menus-menu-solo.jpg",
-  "menus|Menu Duo": "/products/menus-menu-duo.jpg",
-  "menus|Menu Crunchy": "/products/menus-menu-crunchy.jpg",
-  "menus|Menu Quatro": "/products/menus-menu-quatro.jpg",
-  "menus|Menu Sekhawa": "/products/menus-menu-sekhawa.jpg",
-  "tacos-speciaux|Chicken Cheesy Curry": "/products/tacos-speciaux-chicken-cheesy-curry.jpg",
-  "tacos-speciaux|Le BBR": "/products/tacos-speciaux-le-bbr.jpg",
-  "tacos-speciaux|O'Capyk": "/products/tacos-speciaux-o-capyk.jpg",
-  "tacos-speciaux|El Gringo": "/products/tacos-speciaux-el-gringo.jpg",
-  "tacos-speciaux|Le Suisse": "/products/tacos-speciaux-le-suisse.jpg",
-  "tacos-speciaux|So' Raclette": "/products/tacos-speciaux-so-raclette.jpg",
-  "wraps|Chicken Louisiane": "/products/wraps-chicken-louisiane.jpg",
-  "wraps|Chicken Onions": "/products/wraps-chicken-onions.jpg",
-  "wraps|El Dorado": "/products/wraps-el-dorado.jpg",
-  "wraps|Diablo": "/products/wraps-diablo.jpg",
-  "wraps|Sovereign": "/products/wraps-sovereign.jpg",
-  "sandwichs-classiques|Thon": "/products/sandwichs-classiques-thon.jpg",
-  "sandwichs-classiques|Nuggets": "/products/sandwichs-classiques-nuggets.jpg",
-  "sandwichs-classiques|Poulet": "/products/sandwichs-classiques-poulet.jpg",
-  "sandwichs-classiques|Viande Hachée": "/products/sandwichs-classiques-viande-hachee.jpg",
-  "sandwichs-classiques|Mixte": "/products/sandwichs-classiques-mixte.jpg",
-  "sandwichs-speciaux|Le Best": "/products/sandwichs-speciaux-le-best.jpg",
-  "sandwichs-speciaux|Escabri": "/products/sandwichs-speciaux-escabri.jpg",
-  "sandwichs-speciaux|Zinger": "/products/sandwichs-speciaux-zinger.jpg",
-  "sandwichs-speciaux|Phénomène": "/products/sandwichs-speciaux-phenomene.jpg",
-  "sandwichs-speciaux|Quatro": "/products/sandwichs-speciaux-quatro.jpg",
-  "sandwichs-speciaux|Le Blindé": "/products/sandwichs-speciaux-le-blinde.jpg",
-  "sandwichs-speciaux|Triple Steak": "/products/sandwichs-speciaux-triple-steak.jpg",
-  "sandwichs-speciaux|Radical": "/products/sandwichs-speciaux-radical.jpg",
-  "sandwichs-speciaux|Buffalo": "/products/sandwichs-speciaux-buffalo.jpg",
-  "sandwichs-speciaux|Escalope du Chef": "/products/sandwichs-speciaux-escalope-du-chef.jpg",
-  "sandwichs-speciaux|Steak Hachée": "/products/sandwichs-speciaux-steak-hachee.jpg",
-  "sandwichs-speciaux|Méga Fish": "/products/sandwichs-speciaux-mega-fish.jpg",
-  "sandwichs-speciaux|Méga Chicken": "/products/sandwichs-speciaux-mega-chicken.jpg",
-  "sandwichs-speciaux|Chicken Mixte": "/products/sandwichs-speciaux-chicken-mixte.jpg",
-  "sandwichs-speciaux|Chicken Jaune": "/products/sandwichs-speciaux-chicken-jaune.jpg",
-  "sandwichs-speciaux|Chicken Blanc": "/products/sandwichs-speciaux-chicken-blanc.jpg",
-  "sandwichs-speciaux|Chicken Rouge": "/products/sandwichs-speciaux-chicken-rouge.jpg",
-  "sandwichs-speciaux|Mexicain": "/products/sandwichs-speciaux-mexicain.jpg",
-  "sandwichs-speciaux|Hot Mixte": "/products/sandwichs-speciaux-hot-mixte.jpg",
-  "sandwichs-speciaux|Cordon Bleu": "/products/sandwichs-speciaux-cordon-bleu.jpg",
-  "tacos-classiques|Poulet": "/products/tacos-classiques-poulet.jpg",
-  "tacos-classiques|Viande Hachée": "/products/tacos-classiques-viande-hachee.jpg",
-  "tacos-classiques|Nuggets": "/products/tacos-classiques-nuggets.jpg",
-  "tacos-classiques|Cordon Bleu": "/products/tacos-classiques-cordon-bleu.jpg",
-  "tacos-classiques|Hanaa Food": "/products/tacos-classiques-hanaa-food.jpg",
-  "tacos-classiques|Mixte": "/products/tacos-classiques-mixte.jpg",
-  "tacos-classiques|Géant": "/products/tacos-classiques-geant.jpg",
-  "mini-tacos|Poulet": "/products/tacos-classiques-poulet.jpg",
-  "mini-tacos|Viande Hachée": "/products/tacos-classiques-viande-hachee.jpg",
-  "mini-tacos|Mixte": "/products/tacos-classiques-mixte.jpg",
-  "bowls|Fondon": "/products/bowls-fondon.jpg",
-  "bowls|New-York": "/products/bowls-new-york.jpg",
+  "boissons|Eau": "/products/boissons/sidi-ali-user.png",
+  "boissons|Oulmes Eau": "/products/boissons/oulmes-eau-single.png",
+  "boissons|Soda 1 L": "/products/boissons/soda-1l.jpg",
+  "boissons|Soda 25 cl Coca/Fanta/Sprite": "/products/boissons/soda-25cl.jpg",
+  "boissons|Soda 25 cl Hawai/Poms": "/products/boissons/hawai-poms.jpg",
+  "boissons|Soda 33 cl": "/products/boissons/soda-33cl.jpg",
   "bowls|Chicken Riz": "/products/bowls-chicken-riz.jpg",
+  "bowls|Fondon": "/products/bowls-fondon.jpg",
+  "bowls|Le Sort Bowl": "/products/bowls-le-sort-bowl.jpg",
+  "bowls|Matrice Bowl": "/products/bowls-matrice-bowl.jpg",
   "bowls|Mix Match": "/products/bowls-mix-match.jpg",
+  "bowls|New-York": "/products/bowls-new-york.jpg",
   "bowls|Veggie": "/products/bowls-veggie.jpg",
-  "burgers|Mini Cheese": "/products/burgers-mini-cheese.jpg",
-  "burgers|Cheese Burger": "/products/burgers-cheese-burger.jpg",
-  "burgers|Chicken": "/products/burgers-chicken.jpg",
-  "burgers|Cheese Omelette": "/products/burgers-cheese-omelette.jpg",
-  "burgers|Crispy Chicken": "/products/burgers-crispy-chicken.jpg",
-  "burgers|Fish": "/products/burgers-fish.jpg",
-  "burgers|Chicken Rosti": "/products/burgers-chicken-rosti.jpg",
-  "burgers|Big Mac": "/products/burgers-big-mac.jpg",
-  "burgers|Boeuf Rosti": "/products/burgers-boeuf-rosti.jpg",
-  "burgers|Double Chicken": "/products/burgers-double-chicken.jpg",
-  "burgers|Texas": "/products/burgers-texas.jpg",
-  "burgers|Le King": "/products/burgers-le-king.jpg",
-  "salades|Marocaine": "/products/salades-marocaine.jpg",
-  "salades|Niçoise": "/products/salades-nicoise.jpg",
-  "salades|Mexicaine": "/products/salades-mexicaine.jpg",
-  "salades|César": "/products/salades-cesar.jpg",
-  "salades|Hanaa Food": "/products/salades-hanaa-food.jpg",
-  "pates|Poulet Champignon": "/products/pates-poulet-champignon.jpg",
-  "pates|Carbonara": "/products/pates-carbonara.jpg",
-  "pates|Quatre Fromage": "/products/pates-quatre-fromage.jpg",
+  "burgers|Big Flame": "/products/burgers-big-flame.jpg",
+  "burgers|Big Mac": "/products/burgers/big-mac.png",
+  "burgers|Boeuf Rosti": "/products/burgers/boeuf-rosti.png",
+  "burgers|Cheese Burger": "/products/burgers/cheese-burger.png",
+  "burgers|Cheese Omelette": "/products/burgers/cheese-omelette.png",
+  "burgers|Chicken": "/products/burgers/chicken.png",
+  "burgers|Chicken Rosti": "/products/burgers/chicken-rosti.png",
+  "burgers|Crispy Chicken": "/products/burgers/crispy-chicken.png",
+  "burgers|Double Chicken": "/products/burgers/double-chicken.png",
+  "burgers|Fish": "/products/burgers/fish.png",
+  "burgers|Imperial Stack": "/products/burgers-imperial-stack.jpg",
+  "burgers|L'Empereur du Chicken": "/products/burgers-empereur-du-chicken.jpg",
+  "burgers|Le King": "/products/burgers/le-king.png",
+  "burgers|Mini Cheese": "/products/burgers/mini-cheese.png",
+  "burgers|Texas": "/products/burgers/texas.png",
+  "burgers|The Emperor": "/products/burgers-the-emperor.jpg",
+  "desserts|Cheese Cake": "/products/desserts/cheesecake.png",
+  "desserts|Panna Cotta": "/products/desserts/panna-cotta.png",
+  "desserts|Salade Fruit": "/products/dessert-salade-fruit.jpg",
+  "desserts|Tiramisu": "/products/desserts/tiramisu.png",
+  "grillades|Brochettes Mixte": "/products/grillades/brochettes-mixte.png",
+  "grillades|Brochettes Poulet": "/products/grillades/brochettes-poulet.png",
+  "grillades|Brochettes V. Hachée": "/products/grillades/brochettes-viande-hachee.png",
+  "jus|Ananas": "/products/jus/ananas.png",
+  "jus|Avocat": "/products/jus/avocat.png",
+  "jus|Avocat Fruit Sec": "/products/jus/avocat-fruit-sec.png",
+  "jus|Avocat Kit Kat": "/products/jus/avocat-kit-kat.png",
+  "jus|Avocat Oreo": "/products/jus/avocat-oreo.png",
+  "jus|Banane": "/products/jus/banane.png",
+  "jus|Détox": "/products/jus/detox.png",
+  "jus|Exotique": "/products/jus/exotique.png",
+  "jus|Fraise": "/products/jus/fraise.png",
+  "jus|Mangue": "/products/jus/mangue.png",
+  "jus|Orange": "/products/jus/orange.png",
+  "jus|Panaché": "/products/jus/panache.png",
+  "jus|Papaye": "/products/jus/papaye.png",
+  "jus|Pomme": "/products/jus/pomme.png",
+  "jus|Protéine": "/products/jus/proteine.png",
+  "mini-tacos|Mixte": "/products/mini-tacos/mini-mixte.png",
+  "mini-tacos|Poulet": "/products/mini-tacos/mini-poulet.png",
+  "mini-tacos|Viande Hachée": "/products/mini-tacos/mini-viande-hachee.png",
+  "pasticcios|Charcuterie": "/products/pasticcios/charcuterie.png",
+  "pasticcios|Hanaa Food": "/products/pasticcios/hanaa-food.png",
+  "pasticcios|Hot Dog": "/products/pasticcios/hot-dog.png",
+  "pasticcios|Mixte": "/products/pasticcios/mixte.png",
+  "pasticcios|Poulet": "/products/pasticcios/poulet.png",
+  "pasticcios|Viande Hachée": "/products/pasticcios/viande-hachee.png",
   "pates|Bolognaise": "/products/pates-bolognaise.jpg",
-  "pates|Hanaa Food": "/products/pates-hanaa-food.jpg",
+  "pates|Carbonara": "/products/pates-carbonara.jpg",
   "pates|Fruit de Mer": "/products/pates-fruit-de-mer.jpg",
-  "pates|Lasagne": "/products/pates-lasagne.jpg",
-  "pasticcios|Hot Dog": "/products/pasticcio-menu.jpg",
-  "pasticcios|Charcuterie": "/products/pasticcio-menu.jpg",
-  "pasticcios|Poulet": "/products/pasticcio-menu.jpg",
-  "pasticcios|Viande Hachée": "/products/pasticcio-menu.jpg",
-  "pasticcios|Mixte": "/products/pasticcio-menu.jpg",
-  "pasticcios|Hanaa Food": "/products/pasticcio-menu.jpg",
-  "plats|Chicken Eco": "/products/plats-chicken-eco.jpg",
-  "plats|Chicken Hanaa Food": "/products/plats-chicken-hanaa-food.jpg",
-  "plats|Chicken Tandoori": "/products/plats-chicken-tandoori.jpg",
-  "plats|Poulet Parmigiana": "/products/plats-poulet-parmigiana.jpg",
-  "plats|Émincé de Poulet": "/products/plats-emince-de-poulet.jpg",
-  "plats|Escalope de Poulet Milanaise": "/products/plats-escalope-de-poulet-milanaise.jpg",
-  "plats|Cordon Bleu": "/products/plats-cordon-bleu.jpg",
-  "plats|Suprême de Poulet": "/products/plats-supreme-de-poulet.jpg",
-  "plats|Plat Fitness": "/products/plats-plat-fitness.jpg",
-  "grillades|Brochettes Poulet": "/products/grillades-brochettes-poulet.jpg",
-  "grillades|Brochettes Viande Hachée": "/products/grillades-brochettes-viande-hachee.jpg",
-  "grillades|Brochettes Mixte": "/products/grillades-brochettes-mixte.jpg",
-  "jus|Détox": "/products/jus-verres-colores.jpg",
-  "jus|Orange": "/products/jus-verres-colores.jpg",
-  "jus|Banane": "/products/jus-fruits-colores.jpg",
-  "jus|Pomme": "/products/jus-verres-colores.jpg",
-  "jus|Papaye": "/products/jus-verres-colores.jpg",
-  "jus|Fraise": "/products/jus-verres-colores.jpg",
-  "jus|Ananas": "/products/jus-verres-colores.jpg",
-  "jus|Mangue": "/products/jus-verres-colores.jpg",
-  "jus|Panaché": "/products/jus-verres-colores.jpg",
-  "jus|Exotique": "/products/jus-verres-colores.jpg",
-  "jus|Avocat": "/products/jus-avocat-fitness.jpg",
-  "jus|Avocat fruit sec": "/products/jus-avocat-fitness.jpg",
-  "jus|Avocat Oreo": "/products/jus-avocat-fitness.jpg",
-  "jus|Avocat Kit Kat": "/products/jus-avocat-fitness.jpg",
-  "jus|Protéine": "/products/jus-avocat-fitness.jpg",
-  "supplement-jus|Scoop Protein Weight": "/products/supp-jus-proteine.jpg",
+  "pates|Hanaa Food": "/products/pates-hanaa-food.jpg",
+  "pates|Poulet Champignon": "/products/pates-poulet-champignon.jpg",
+  "pates|Quatre Fromage": "/products/pates-quatre-fromage.jpg",
+  "pizzas|Calzon": "/products/pizza-calzone.jpg",
+  "pizzas|Charcuterie": "/products/pizza-charcuterie.jpg",
+  "pizzas|Fruits de Mer": "/products/pizza-fruits-de-mer.jpg",
+  "pizzas|Hot Dog": "/products/pizza-hot-dog.jpg",
+  "pizzas|Margherita": "/products/pizza-margherita.jpg",
+  "pizzas|Napolitaine": "/products/pizza-napolitaine.jpg",
+  "pizzas|Pepperoni": "/products/pizza-pepperoni.jpg",
+  "pizzas|Poulet": "/products/pizza-poulet.jpg",
+  "pizzas|Quatre Fromage": "/products/pizza-quatre-fromages.jpg",
+  "pizzas|Quatre Saisons": "/products/pizza-quatre-saisons.jpg",
+  "pizzas|Suprême": "/products/pizza-supreme.jpg",
+  "pizzas|Thon": "/products/pizza-thon.jpg",
+  "pizzas|Viande Hachée": "/products/pizza-viande-hachee.jpg",
+  "pizzas|Végétarienne": "/products/pizza-vegetarienne.jpg",
+  "plats|Chicken Eco": "/products/plats/chicken-eco-v2.png",
+  "plats|Chicken Hanaa Food": "/products/plats/chicken-hanaa-food-v2.png",
+  "plats|Chicken Tandoori": "/products/plats/chicken-tandoori-v2.png",
+  "plats|Cordon Bleu": "/products/plats/cordon-bleu-v2.png",
+  "plats|Escalope de Poulet Milanaise": "/products/plats/escalope-milanaise-v2.png",
+  "plats|Plat Fitnesse": "/products/plats/plat-fitnesse-v2.png",
+  "plats|Poulet Parmigiana": "/products/plats/poulet-parmigiana-v2.png",
+  "plats|Émincé de Poulet": "/products/plats/emince-de-poulet.png",
+  "salades|César": "/products/salades/cesar.png",
+  "salades|Hanaa Food": "/products/salades/hanaa-food.png",
+  "salades|Marocaine": "/products/salades/marocaine.png",
+  "salades|Mexicaine": "/products/salades/mexicaine.png",
+  "salades|Niçoise": "/products/salades/nicoise.png",
+  "sandwichs-classiques|Mixte": "/products/sandwichs-classiques/mixte.png",
+  "sandwichs-classiques|Nuggets": "/products/sandwichs-classiques/nuggets.png",
+  "sandwichs-classiques|Poulet": "/products/sandwichs-classiques/poulet.png",
+  "sandwichs-classiques|Thon": "/products/sandwichs-classiques/thon.png",
+  "sandwichs-classiques|Viande Hachée": "/products/sandwichs-classiques/viande-hachee.png",
+  "sandwichs-speciaux|Boeuf Titanesque": "/products/sandwichs-speciaux-boeuf-titanesque.jpg",
+  "sandwichs-speciaux|Buffalo": "/products/sandwichs-speciaux-buffalo.jpg",
+  "sandwichs-speciaux|Canibal": "/products/sandwichs-speciaux-canibal.jpg",
+  "sandwichs-speciaux|Chicken Blanc": "/products/sandwichs-speciaux-chicken-blanc.jpg",
+  "sandwichs-speciaux|Chicken Jaune": "/products/sandwichs-speciaux-chicken-jaune.jpg",
+  "sandwichs-speciaux|Chicken Mixte": "/products/sandwichs-speciaux-chicken-mixte.jpg",
+  "sandwichs-speciaux|Chicken Rouge": "/products/sandwichs-speciaux-chicken-rouge.jpg",
+  "sandwichs-speciaux|Cordon Bleu": "/products/sandwichs-speciaux-cordon-bleu.jpg",
+  "sandwichs-speciaux|Escabri": "/products/sandwichs-speciaux-escabri.jpg",
+  "sandwichs-speciaux|Escalope du Chef": "/products/sandwichs-speciaux-escalope-du-chef.jpg",
+  "sandwichs-speciaux|Hot Mixte": "/products/sandwichs-speciaux-hot-mixte.jpg",
+  "sandwichs-speciaux|Le Best": "/products/sandwichs-speciaux-le-best.jpg",
+  "sandwichs-speciaux|Le Blindé": "/products/sandwichs-speciaux-le-blinde.jpg",
+  "sandwichs-speciaux|Mexicain": "/products/sandwichs-speciaux-mexicain.jpg",
+  "sandwichs-speciaux|Méga Chicken": "/products/sandwichs-speciaux-mega-chicken.jpg",
+  "sandwichs-speciaux|Méga Fish": "/products/sandwichs-speciaux-mega-fish.jpg",
+  "sandwichs-speciaux|Phénomène": "/products/sandwichs-speciaux-phenomene.jpg",
+  "sandwichs-speciaux|Poulet Titanesque": "/products/sandwichs-speciaux-poulet-titanesque.jpg",
+  "sandwichs-speciaux|Psychopat": "/products/sandwichs-speciaux-psychopat.jpg",
+  "sandwichs-speciaux|Quatro": "/products/sandwichs-speciaux-quatro.jpg",
+  "sandwichs-speciaux|Radical": "/products/sandwichs-speciaux-radical.jpg",
+  "sandwichs-speciaux|Steak Hachée": "/products/sandwichs-speciaux-steak-hachee.jpg",
+  "sandwichs-speciaux|Triple Steak": "/products/sandwichs-speciaux-triple-steak.jpg",
+  "sandwichs-speciaux|Zinger": "/products/sandwichs-speciaux-zinger.jpg",
+  "supplement-jus|Flocon d'Avoine": "/products/supplement-jus/flocon-avoine.png",
+  "supplement-jus|Fruits Sec": "/products/supp-jus-fruits-secs.jpg",
   "supplement-jus|Scoop Protein Mass": "/products/supp-jus-proteine.jpg",
-  "supplement-jus|Fruits sec": "/products/supp-jus-fruits-secs.jpg",
-  "supplement-jus|Flocon d'avoine": "/products/supp-jus-avoine.jpg",
-  "desserts|Salade de fruit": "/products/dessert-salade-fruit.jpg",
-  "desserts|Tiramisu": "/products/dessert-tiramisu.jpg",
-  "desserts|Panna Cotta": "/products/dessert-panna-cotta.jpg",
-  "desserts|Cheese Cake": "/products/dessert-cheesecake.jpg",
-  "supplements|Pain maison": "/products/supp-pain-fromage.jpg",
-  "supplements|Sauce": "/products/supp-sauce-garniture.jpg",
-  "supplements|Fromage": "/products/supp-pain-fromage.jpg",
-  "supplements|Mozzarella": "/products/supp-pain-fromage.jpg",
-  "supplements|Champignon frais": "/products/supp-sauce-garniture.jpg",
-  "supplements|Frite": "/products/supp-sauce-garniture.jpg",
-  "supplements|Potatoes": "/products/supp-sauce-garniture.jpg",
-  "supplements|Légumes sautés": "/products/supp-sauce-garniture.jpg",
-  "supplements|Pâte": "/products/supp-sauce-garniture.jpg",
-  "supplements|Risotto": "/products/supp-sauce-garniture.jpg",
-  "supplements|Sauce champignon": "/products/supp-sauce-garniture.jpg",
-  "supplements|Chicken": "/products/supp-sauce-garniture.jpg",
-  "supplements|Brochette poulet": "/products/supp-brochettes.jpg",
-  "supplements|Brochette V. Hachée": "/products/supp-brochettes.jpg",
-  "supplements|Brochette merguez": "/products/supp-brochettes.jpg",
-  "boissons|Soda 25 cl Coca/Fanta/Sprite": "/products/boisson-canettes.jpg",
-  "boissons|Soda 25 cl Hawai/Poms": "/products/boisson-canettes.jpg",
-  "boissons|Soda 33 cl": "/products/boisson-canettes.jpg",
-  "boissons|Soda 1 L": "/products/boisson-bouteilles.jpg",
-  "boissons|Eau": "/products/boisson-bouteilles.jpg",
-  "boissons|Énergie Oasis": "/products/boisson-canettes.jpg",
-  "boissons|Oulmes Eau": "/products/boisson-oulmes.jpg",
-  "boissons|Oulmes Soda": "/products/boisson-oulmes.jpg"
+  "supplement-jus|Scoop Protein Weight": "/products/supp-jus-proteine.jpg",
+  "supplements|Brochette Poulet": "/products/supplements/brochette-poulet.png",
+  "supplements|Brochette V. Hachée": "/products/supplements/brochette-viande-hachee.png",
+  "supplements|Champignon Frais": "/products/supplements/champignon-frais.png",
+  "supplements|Chicken": "/products/supplements/poulet.png",
+  "supplements|Frite": "/products/supplements/frites.png",
+  "supplements|Fromage": "/products/supplements/fromage.png",
+  "supplements|Légumes Sautés": "/products/supplements/legumes-sautes.png",
+  "supplements|Mozzarella": "/products/supplements/mozzarella.png",
+  "supplements|Pain Maison": "/products/supplements/pain-maison.png",
+  "supplements|Pâte": "/products/supplements/pate.png",
+  "supplements|Risotto": "/products/supplements/risotto.png",
+  "supplements|Sauce": "/products/supplements/sauce.png",
+  "supplements|Sauce Champignon": "/products/supplements/sauce-champignon.png",
+  "tacos-classiques|Cordon Bleu": "/products/tacos-classiques/cordon-bleu.png",
+  "tacos-classiques|Géant": "/products/tacos-classiques/geant.png",
+  "tacos-classiques|Hanaa Food": "/products/tacos-classiques/hanaa-food.png",
+  "tacos-classiques|Mixte": "/products/tacos-classiques/mixte.png",
+  "tacos-classiques|Nuggets": "/products/tacos-classiques/nuggets.png",
+  "tacos-classiques|Poulet": "/products/tacos-classiques/poulet.png",
+  "tacos-classiques|Viande Hachée": "/products/tacos-classiques/viande-hachee.png",
+  "tacos-speciaux|Chicken Cheesy Curry": "/products/tacos-speciaux-chicken-cheesy-curry.jpg",
+  "tacos-speciaux|Double Chicken": "/products/tacos-speciaux-double-chicken.jpg",
+  "tacos-speciaux|El Gringo": "/products/tacos-speciaux-el-gringo.jpg",
+  "tacos-speciaux|La Zomba X": "/products/tacos-speciaux-la-zomba-x.jpg",
+  "tacos-speciaux|Le BBR": "/products/tacos-speciaux-le-bbr.jpg",
+  "tacos-speciaux|Le Gourmand": "/products/tacos-speciaux-le-gourmand.jpg",
+  "tacos-speciaux|Le Suisse": "/products/tacos-speciaux-le-suisse.jpg",
+  "tacos-speciaux|O'Capik": "/products/tacos-speciaux-o-capyk.jpg",
+  "tacos-speciaux|O'Crost!": "/products/tacos-speciaux-o-crost.jpg",
+  "tacos-speciaux|So' Raclette": "/products/tacos-speciaux-so-raclette.jpg",
+  "wraps|Chicken Louisiane": "/products/wraps/chicken-louisiane.png",
+  "wraps|Chicken Onions": "/products/wraps/chicken-onions.png",
+  "wraps|Diablo": "/products/wraps/diablo.png",
+  "wraps|Eldorado": "/products/wraps/eldorado.png",
+  "wraps|Sovereign": "/products/wraps/sovereign.png",
+  "jus|Detox": "/products/jus/detox.png",
+  "jus|Proteine": "/products/jus/proteine.png",
+  "supplement-jus|Whey": "/products/supplement-jus/whey.png",
+  "supplement-jus|Mass Tech": "/products/supplement-jus/mass-tech.png",
+  "supplement-jus|Fruits sec": "/products/supplement-jus/fruits-sec.png",
+  "supplement-jus|Flocon d’Avoine": "/products/supplement-jus/flocon-avoine.png",
+  "desserts|Salade de fruits": "/products/desserts/salade-fruits.png",
+  "desserts|Cheesecake": "/products/desserts/cheesecake.png",
+  "desserts|Gâteau au fromage": "/products/desserts/cheesecake.png",
+  "supplements|Pain maison": "/products/supplements/pain-maison.png",
+  "supplements|Champignon frais": "/products/supplements/champignon-frais.png",
+  "supplements|Frites": "/products/supplements/frites.png",
+  "supplements|Légumes sautés": "/products/supplements/legumes-sautes.png",
+  "supplements|Sauce champignon": "/products/supplements/sauce-champignon.png",
+  "supplements|Brochette poulet": "/products/supplements/brochette-poulet.png",
+  "supplements|Brochette V. Hachee": "/products/supplements/brochette-viande-hachee.png",
+  "supplements|Poulet": "/products/supplements/poulet.png",
+  "supplements|Pate": "/products/supplements/pate.png",
+  "supplements|Crâne": "/products/supplements/pate.png",
+  "supplements|Crane": "/products/supplements/pate.png",
+  "supplements|Gouda / Edam": "/products/supplements/gouda-edam.png",
+  "supplements|Gouda/Edam": "/products/supplements/gouda-edam.png",
+  "supplements|Gouda /Edam": "/products/supplements/gouda-edam.png",
+  "boissons|Soda 25 cl Hawai/Pom's": "/products/boissons/hawai-poms.jpg",
+  "boissons|Soda 1L": "/products/boissons/soda-1l.jpg",
+  "boissons|Oulmès Eau": "/products/boissons/oulmes-eau-single.png",
+  "boissons|Schweppes": "/products/boissons/schweppes-user.png",
+  "boissons|Soda d'Oulmes": "/products/boissons/oulmes-soda-user.png",
+  "supplements|Potatoes Maison": "/products/supplements/potatoes-maison.png",
 };
 
-const products = rawProducts.map((item, index) => ({
-  id: index + 1,
-  name: item[0],
-  categoryId: item[1],
-  subcategoryId: item[1],
-  price: item[2],
-  description: item[3],
-  image: productImageMap[`${item[1]}|${item[0]}`] || photo(item[4]),
-  variants: Array.isArray(item[5])
-    ? { type: "pasta", choices: item[5] }
-    : item[5] || {},
-  extras:
-    item[1] === "plats" || item[1] === "grillades" ? accompaniments : extras,
-}));
+const products = rawProducts.map((item, index) => {
+  const categoryId = item[1];
+  const isMealWithSides = categoryId === "plats" || categoryId === "grillades";
+  const productExtras = isMealWithSides
+    ? accompaniments.map((name) => ({ name, price: 0 }))
+    : extrasByCategory[categoryId] || [];
+  return {
+    id: index + 1,
+    name: item[0],
+    categoryId,
+    subcategoryId: categoryId,
+    price: item[2],
+    description: item[3],
+  image:
+    productImageMap[`${item[1]}|${item[0]}`] ||
+    (String(item[4] || "").startsWith("/") ||
+    String(item[4] || "").startsWith("http")
+      ? item[4]
+      : photo(item[4])),
+    variants: Array.isArray(item[5])
+      ? { type: "pasta", choices: item[5] }
+      : item[5] || {},
+    extras: productExtras,
+    maxExtras: isMealWithSides ? 2 : 99,
+    requiredExtras: isMealWithSides ? 2 : 0,
+  };
+});
+const sauceCategories = new Set([
+  "sandwichs-classiques",
+  "sandwichs-speciaux",
+  "tacos-classiques",
+  "mini-tacos",
+  "tacos-speciaux",
+  "wraps",
+]);
+
+const sauceOptions = [
+  "Blanche",
+  "Algérienne",
+  "Andalouse",
+  "Samouraï",
+  "Barbecue",
+  "Ketchup",
+  "Mayonnaise",
+  "Harissa",
+  "Fromagère",
+];
+
+const requiresSauce = (product) =>
+  Boolean(product && sauceCategories.has(product.categoryId));
+
 const phoneIsValid = (value) =>
   /^(0[67]\d{8}|\+212[67]\d{8})$/.test(value.replace(/[ .-]/g, ""));
 function feeFor(branch, distance, subtotal) {
@@ -594,7 +674,7 @@ function App() {
   const navigate = (path, replace = false) => { const safePath = authorizedPath(path, session); window.history[replace ? "replaceState" : "pushState"]({}, "", safePath); setView(routeViews[safePath] || "home"); };
   useEffect(() => { const syncPath = () => navigate(window.location.pathname, true); window.addEventListener("popstate", syncPath); return () => window.removeEventListener("popstate", syncPath); });
   useEffect(() => { const safePath = authorizedPath(window.location.pathname, session); if (safePath !== window.location.pathname) { window.history.replaceState({}, "", safePath); queueMicrotask(() => setView(routeViews[safePath] || "home")); } }, [session]);
-  const [category, setCategory] = useState("menus");
+  const [category, setCategory] = useState("salades");
   const [query, setQuery] = useState("");
   const [address, setAddress] = useState("");
   const [customerLocation, setCustomerLocation] = useState(null);
@@ -609,9 +689,21 @@ function App() {
   const [deliveryBranchId, setDeliveryBranchId] = useState("");
   const [pickupBranchId, setPickupBranchId] = useState("");
   const [modal, setModal] = useState(null);
-  const [order, setOrder] = useState(() =>
-    JSON.parse(localStorage.getItem("hanaa-order") || "null"),
-  );
+  const [order, setOrder] = useState(null);
+
+  useEffect(() => {
+    if (!order?.id) return undefined;
+
+    try {
+      return subscribeOrder(order.id, (updatedOrder) => {
+        setOrder(updatedOrder);
+      });
+    } catch (error) {
+      console.error("Order realtime subscription failed:", error);
+      return undefined;
+    }
+  }, [order?.id]);
+
   const [favorites, setFavorites] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("hanaa-favorites") || "[]");
@@ -793,10 +885,11 @@ function App() {
   }, [category, query]);
   const add = (product, options = {}) => {
     const chosen = options.extras || [];
+    const sauce = options.sauce || "";
     const price =
       (options.variantPrice || product.price) +
       chosen.reduce((sum, item) => sum + item.price, 0);
-    const key = `${product.id}-${options.variant || ""}-${chosen.map((item) => item.name).join("-")}`;
+    const key = `${product.id}-${options.variant || ""}-${sauce}-${chosen.map((item) => item.name).join("-")}`;
     setCart((current) => {
       const found = current.find((item) => item.key === key);
       return found
@@ -812,6 +905,7 @@ function App() {
               productId: product.id,
               name: product.name,
               size: options.variant || "",
+              sauce,
               extras: chosen,
               price,
               quantity: options.quantity || 1,
@@ -831,7 +925,7 @@ function App() {
         )
         .filter((item) => item.quantity > 0),
     );
-  const place = (details) => {
+  const place = async (details) => {
     const next = {
       id: `HF${Math.floor(1000 + Math.random() * 8999)}`,
       customerName: details.name,
@@ -854,10 +948,14 @@ function App() {
       statusHistory: [{ status: mode === "delivery" ? "NOUVELLE" : "NOUVELLE COMMANDE", at: new Date().toISOString() }],
       createdAt: new Date().toISOString(),
     };
-    setOrder(next);
-    localStorage.setItem("hanaa-order", JSON.stringify(next));
-    const orders = JSON.parse(localStorage.getItem("hanaa-orders") || "[]");
-    localStorage.setItem("hanaa-orders", JSON.stringify([next, ...orders.filter((item) => item.id !== next.id)]));
+    try {
+      const savedOrder = await createOrder(next);
+      setOrder(savedOrder);
+    } catch (error) {
+      console.error("Supabase order create failed:", error);
+      window.alert("Commande ma tsajlatch. T2akked mn Supabase w internet.");
+      return;
+    }
     setCart([]);
     setView("tracking");
   };
@@ -1051,7 +1149,9 @@ function App() {
             style={{ width: 76, height: 76, objectFit: "contain" }}
           />
         </strong>
-        <span>Le goût livré avec attention.</span>
+        <span>Delicious Food · Livraison à domicile : 05 21 43 11 03</span>
+        <span>@hanaafood_california · Hanaa Food California · hanaa food.ma</span>
+        <span>Bd Amgala, N°189 · Hay Al Osra, Ain Chock · Casablanca - Maroc</span>
         <span>© 2026 Hanaa Food</span>
       </footer>
       <div className="mobile-nav">
@@ -1326,7 +1426,7 @@ function ProductCard({
       >
         {favorite ? "♥" : "♡"}
       </button>
-      <button className="product-image" onClick={onDetails}>
+      <button className="product-image" data-category={product.categoryId} onClick={onDetails}>
         <img src={product.image} alt={product.name} />
         <span>{product.categoryId}</span>
       </button>
@@ -1356,8 +1456,53 @@ function ProductModal({ product, close, add }) {
       ? product.variants.choices
       : Object.keys(product.variants);
   const [variant, setVariant] = useState(choices[0] || "");
+  const needsMainSauce = [
+    "tacos-classiques",
+    "mini-tacos",
+    "sandwichs-classiques",
+  ].includes(product.categoryId);
+  const mainSauceOptions = [
+    "Sauce blanche",
+    "Sauce fromagère",
+    "Sauce algérienne",
+    "Sauce andalouse",
+    "Sauce samouraï",
+    "Sauce barbecue",
+  ];
+  const [mainSauces, setMainSauces] = useState([]);
+  const mainSauceValid = !needsMainSauce || mainSauces.length >= 1;
+  const toggleMainSauce = (name) =>
+    setMainSauces((current) => {
+      if (current.includes(name)) {
+        return current.filter((item) => item !== name);
+      }
+      if (current.length >= 2) {
+        return current;
+      }
+      return [...current, name];
+    });
+  const isClassicTacos =
+    product.categoryId === "tacos-classiques" ||
+    product.categoryId === "mini-tacos";
+  const tacoSauces = [
+    "Sauce blanche",
+    "Sauce fromagère",
+    "Sauce algérienne",
+    "Sauce andalouse",
+    "Sauce samouraï",
+    "Sauce barbecue",
+  ];
   const [chosen, setChosen] = useState([]);
+  const selectedTacoSauce =
+    chosen.find((item) => item?.isTacoSauce)?.name || "";
+  const tacoSauceValid = !isClassicTacos || Boolean(selectedTacoSauce);
+  const chooseTacoSauce = (name) =>
+    setChosen((current) => [
+      { name, price: 0, isTacoSauce: true },
+      ...current.filter((item) => !item?.isTacoSauce),
+    ]);
   const [quantity, setQuantity] = useState(1);
+  const [pastaSauce, setPastaSauce] = useState(product.name === "Bolognaise" ? "Sauce tomate" : "Sauce blanche");
   const variantPrice =
     product.variants.type === "pasta"
       ? product.price
@@ -1365,39 +1510,71 @@ function ProductModal({ product, close, add }) {
   const total =
     (variantPrice + chosen.reduce((sum, item) => sum + item.price, 0)) *
     quantity;
+  const extras = product.extras || [];
+  const isPlateWithSides =
+    product.categoryId === "plats" || product.categoryId === "grillades";
+  const maxExtras = isPlateWithSides
+    ? 2
+    : Number.isFinite(product.maxExtras)
+      ? product.maxExtras
+      : 99;
+  const requiredExtras = isPlateWithSides
+    ? 2
+    : Number.isFinite(product.requiredExtras)
+      ? product.requiredExtras
+      : 0;
+  const extrasValid = chosen.length >= requiredExtras;
   const toggle = (extra) =>
     setChosen((current) =>
       current.some((item) => item.name === extra.name)
         ? current.filter((item) => item.name !== extra.name)
-        : current.length <
-            (product.categoryId === "plats" ||
-            product.categoryId === "grillades"
-              ? 2
-              : 99)
+        : current.length < maxExtras
           ? [...current, extra]
           : current,
     );
+  const variantLabel =
+    product.variants.type === "pasta"
+      ? "Choisis tes pâtes"
+      : product.categoryId === "tapas"
+        ? "Choisis la portion"
+        : "Choisis ta taille";
+  const extrasLabel =
+    product.categoryId === "plats" || product.categoryId === "grillades"
+      ? `Choisis 2 accompagnements (${chosen.length}/2)`
+      : "Options du menu";
   return (
     <div
       className="modal-backdrop"
       onMouseDown={(event) => event.target === event.currentTarget && close()}
     >
       <div className="product-modal">
-        <button className="close" onClick={close}>
-          ×
-        </button>
-        <img src={product.image} alt="" />
+        <button className="close" onClick={close}>×</button>
+        <img src={product.image} alt={product.name} />
         <div className="modal-content">
           <span className="eyebrow">{product.categoryId}</span>
           <h2>{product.name}</h2>
-          <p>{product.description}</p>
+          {product.description && <p>{product.description}</p>}
+          {needsMainSauce && (
+            <div className="option-group main-sauce-first">
+              <label>Choisis jusqu’à 2 sauces</label>
+              <div className="size-options">
+                {mainSauceOptions.map((item) => (
+                  <button
+                    type="button"
+                    className={mainSauces.includes(item) ? "active" : ""}
+                    key={item}
+                    onClick={() => toggleMainSauce(item)}
+                  >
+                    {item}
+                    <small>Inclus</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {choices.length > 0 && (
             <div className="option-group">
-              <label>
-                {product.variants.type === "pasta"
-                  ? "Choisis tes pâtes"
-                  : "Choisis ta taille"}
-              </label>
+              <label>{variantLabel}</label>
               <div className="size-options">
                 {choices.map((item) => (
                   <button
@@ -1416,55 +1593,68 @@ function ProductModal({ product, close, add }) {
               </div>
             </div>
           )}
-          <div className="option-group">
-            <label>
-              {product.categoryId === "plats" ||
-              product.categoryId === "grillades"
-                ? "Choisis 2 accompagnements maximum"
-                : "Un petit supplément ?"}
-            </label>
-            <div className="extra-list">
-              {(product.categoryId === "plats" ||
-              product.categoryId === "grillades"
-                ? accompaniments.map((name) => ({ name, price: 0 }))
-                : extras
-              ).map((extra) => (
-                <button
-                  className={
-                    chosen.some((item) => item.name === extra.name)
-                      ? "selected"
-                      : ""
-                  }
-                  key={extra.name}
-                  onClick={() => toggle(extra)}
-                >
-                  <span>+</span>
-                  {extra.name}
-                  <b>{extra.price ? `+${extra.price} DH` : "Inclus"}</b>
-                </button>
-              ))}
+          {product.variants.type === "pasta" && (
+            <div className="option-group">
+              <label>Choisis ta sauce</label>
+              <div className="size-options">
+                {(product.name === "Bolognaise" ? ["Sauce tomate"] : ["Sauce blanche", "Sauce champignon"]).map((item) => (
+                  <button
+                    className={pastaSauce === item ? "active" : ""}
+                    key={item}
+                    onClick={() => setPastaSauce(item)}
+                  >
+                    {item}
+                    <small>Inclus</small>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+          {(extras.length > 0 || isPlateWithSides) && (
+            <div className="option-group">
+              <label>{extrasLabel}</label>
+              <div className="extra-list">
+                {extras.map((extra) => (
+                  <button
+                    className={chosen.some((item) => item.name === extra.name) ? "selected" : ""}
+                    key={extra.name}
+                    onClick={() => toggle(extra)}
+                  >
+                    <span>+</span>
+                    {extra.name}
+                    <b>{extra.price ? `+${extra.price} DH` : "Inclus"}</b>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="modal-footer">
             <div className="quantity">
-              <button onClick={() => setQuantity(Math.max(1, quantity - 1))}>
-                −
-              </button>
+              <button onClick={() => setQuantity(Math.max(1, quantity - 1))}>−</button>
               <b>{quantity}</b>
               <button onClick={() => setQuantity(quantity + 1)}>+</button>
             </div>
             <button
               className="primary-action"
+              disabled={!extrasValid || !mainSauceValid}
               onClick={() =>
-                add(product, {
+                extrasValid && add(product, {
                   variant,
                   variantPrice,
-                  extras: chosen,
+                  extras:
+                    needsMainSauce && mainSauces.length
+                      ? [
+                          ...mainSauces.map((name) => ({ name, price: 0 })),
+                          ...chosen.filter((item) => !item?.isTacoSauce),
+                        ]
+                      : (product.variants.type === "pasta"
+                      ? [...chosen, { name: pastaSauce, price: 0 }]
+                      : chosen),
                   quantity,
                 })
               }
             >
-              Ajouter <b>{total} DH</b>
+              {extrasValid ? "Ajouter" : "Choisis 2 accompagnements"} <b>{total} DH</b>
             </button>
           </div>
         </div>
@@ -1510,6 +1700,7 @@ function Cart({
                   <h3>{item.name}</h3>
                   <span>
                     {item.size && `${item.size} · `}
+                    {item.sauce && `Sauce: ${item.sauce} · `}
                     {item.extras.length
                       ? item.extras.map((extra) => extra.name).join(", ")
                       : "Sans supplément"}
@@ -1728,14 +1919,28 @@ function Tracking({ order, onHome }) {
     ? ["NOUVELLE COMMANDE", "VALIDÉE PAR LE SNACK", "EN PRÉPARATION", "PRÊTE", "RÉCUPÉRÉE"]
     : ["NOUVELLE", "ACCEPTÉE PAR LE CAISSIER", "PRISE PAR LE LIVREUR", "EN LIVRAISON", "LIVRÉE"];
   useEffect(() => {
-    const sync = () => {
-      const orders = JSON.parse(localStorage.getItem("hanaa-orders") || "[]");
-      const latest = orders.find((item) => item.id === order?.id);
-      if (latest) setCurrentOrder(latest);
+    if (!order?.id) return undefined;
+    let active = true;
+
+    void getOrder(order.id)
+      .then((latest) => {
+        if (active && latest) setCurrentOrder(latest);
+      })
+      .catch((error) => console.error("Tracking Supabase load failed:", error));
+
+    let unsubscribe = () => {};
+    try {
+      unsubscribe = subscribeOrder(order.id, (latest) => {
+        if (active && latest) setCurrentOrder(latest);
+      });
+    } catch (error) {
+      console.error("Tracking Supabase realtime failed:", error);
+    }
+
+    return () => {
+      active = false;
+      unsubscribe();
     };
-    window.addEventListener("storage", sync);
-    const timer = setInterval(sync, 1000);
-    return () => { window.removeEventListener("storage", sync); clearInterval(timer); };
   }, [order?.id]);
   const cancelledStatuses = ["REFUSÉE", "REFUSÉE PAR LE SNACK", "ANNULÉE", "ANNULÉE PAR LE SNACK"];
   const isCancelled = cancelledStatuses.includes(currentOrder?.statusLabel);
@@ -1812,38 +2017,32 @@ function Tracking({ order, onHome }) {
   );
 }
 function Orders({ order, onHome, onReorder, onTrack }) {
-  const [savedOrders, setSavedOrders] = useState(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem("hanaa-orders") || "[]");
-      return Array.isArray(stored) && stored.length
-        ? stored
-        : order
-          ? [order]
-          : [];
-    } catch {
-      return order ? [order] : [];
-    }
-  });
+  const [savedOrders, setSavedOrders] = useState(() => (order ? [order] : []));
 
   useEffect(() => {
-    const sync = () => {
+    let active = true;
+
+    const load = async () => {
       try {
-        const stored = JSON.parse(
-          localStorage.getItem("hanaa-orders") || "[]",
-        );
-        setSavedOrders(Array.isArray(stored) ? stored : []);
-      } catch {
-        setSavedOrders([]);
+        const latest = await listOrders();
+        if (active) setSavedOrders(latest);
+      } catch (error) {
+        console.error("Orders Supabase load failed:", error);
       }
     };
 
-    sync();
-    window.addEventListener("storage", sync);
-    const timer = setInterval(sync, 1000);
+    void load();
+
+    let unsubscribe = () => {};
+    try {
+      unsubscribe = subscribeOrders(() => void load());
+    } catch (error) {
+      console.error("Orders Supabase realtime failed:", error);
+    }
 
     return () => {
-      window.removeEventListener("storage", sync);
-      clearInterval(timer);
+      active = false;
+      unsubscribe();
     };
   }, []);
 
