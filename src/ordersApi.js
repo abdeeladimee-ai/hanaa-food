@@ -3,6 +3,24 @@ import { requireSupabase } from "./supabase";
 const TABLE = "orders";
 const POLL_INTERVAL_MS = 15000;
 const ORDER_LIST_LIMIT = 200;
+const SNACK_ORDER_LIST_LIMIT = 80;
+const SESSION_KEY = "hanaa-auth-session";
+
+function getSnackBranchId() {
+  if (typeof window === "undefined") return null;
+  if (!window.location.pathname.toLowerCase().startsWith("/snack")) return null;
+
+  try {
+    const raw =
+      localStorage.getItem(SESSION_KEY) ||
+      sessionStorage.getItem(SESSION_KEY) ||
+      "null";
+    const session = JSON.parse(raw);
+    return session?.branchId ? String(session.branchId) : null;
+  } catch {
+    return null;
+  }
+}
 
 const toRow = (order) => ({
   id: String(order.id),
@@ -100,12 +118,22 @@ const fromRow = (row) => ({
 
 export async function listOrders() {
   const supabase = requireSupabase();
+  const snackBranchId = getSnackBranchId();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from(TABLE)
     .select("*")
-    .order("created_at", { ascending: false })
-    .limit(ORDER_LIST_LIMIT);
+    .order("created_at", { ascending: false });
+
+  if (snackBranchId) {
+    query = query
+      .eq("branch_id", snackBranchId)
+      .limit(SNACK_ORDER_LIST_LIMIT);
+  } else {
+    query = query.limit(ORDER_LIST_LIMIT);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
 
@@ -156,12 +184,21 @@ export async function upsertOrder(order) {
 
 export function subscribeOrders(onChange) {
   const supabase = requireSupabase();
+  const snackBranchId = getSnackBranchId();
+  const realtimeConfig = snackBranchId
+    ? {
+        event: "*",
+        schema: "public",
+        table: TABLE,
+        filter: `branch_id=eq.${snackBranchId}`,
+      }
+    : { event: "*", schema: "public", table: TABLE };
 
   const channel = supabase
     .channel(`hanaa-orders-${Math.random().toString(36).slice(2)}`)
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: TABLE },
+      realtimeConfig,
       (payload) => onChange?.(payload),
     )
     .subscribe();
