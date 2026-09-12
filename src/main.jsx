@@ -4,6 +4,7 @@ import './index.css'
 import './customer-cleanup.css'
 import './qzAutoPrint.js'
 import App from './App.jsx'
+import ErrorBoundary from './ErrorBoundary.jsx'
 
 const internalPath = ['/login', '/admin', '/snack', '/livreur'].some((prefix) =>
   window.location.pathname.toLowerCase().startsWith(prefix),
@@ -18,6 +19,8 @@ if (!internalPath) {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 )
