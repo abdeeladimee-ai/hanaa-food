@@ -70,7 +70,7 @@
       @media (max-width: 520px) {
         #${OVERLAY_ID} { padding: 14px; }
         #${OVERLAY_ID} .hanaa-location-card { padding: 18px 16px; border-radius: 18px; }
-        #${OVERLAY_ID} img { width: 72px; max-width: 26vw; margin-bottom: 5px; }
+        #${OVERLAY_ID} img { width: 60px; max-width: 22vw; margin-bottom: 3px; }
         #${OVERLAY_ID} h1 { font-size: 20px; margin-bottom: 12px; }
       }
     `;
