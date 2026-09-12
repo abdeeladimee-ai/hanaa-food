@@ -1,11 +1,124 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#D71920" />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
+
+    <title>Hanaa Food Casablanca | Tacos, Pizza, Sandwichs & Livraison</title>
+    <meta
+      name="description"
+      content="Commandez chez Hanaa Food à Casablanca : tacos, pizzas, sandwichs, burgers, grillades, pâtes et plus. Livraison ou à emporter depuis Tadart, Amgala et Rue Baghdad."
+    />
+    <link rel="canonical" href="https://hanaa-food.vercel.app/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="fr_MA" />
+    <meta property="og:site_name" content="Hanaa Food" />
+    <meta property="og:title" content="Hanaa Food Casablanca | Livraison & À emporter" />
+    <meta
+      property="og:description"
+      content="Tacos, pizzas, sandwichs, burgers, grillades et plats Hanaa Food à Casablanca. Commandez en livraison ou à emporter."
+    />
+    <meta property="og:url" content="https://hanaa-food.vercel.app/" />
+    <meta property="og:image" content="https://hanaa-food.vercel.app/hanaa-logo.png" />
+    <meta property="og:image:alt" content="Logo Hanaa Food Casablanca" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Hanaa Food Casablanca" />
+    <meta
+      name="twitter:description"
+      content="Commandez Hanaa Food à Casablanca en livraison ou à emporter."
+    />
+    <meta name="twitter:image" content="https://hanaa-food.vercel.app/hanaa-logo.png" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/snack-dashboard.css" />
-    <title>hanaa-food</title>
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://hanaa-food.vercel.app/#website",
+            "url": "https://hanaa-food.vercel.app/",
+            "name": "Hanaa Food",
+            "inLanguage": "fr-MA"
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://hanaa-food.vercel.app/#organization",
+            "name": "Hanaa Food",
+            "url": "https://hanaa-food.vercel.app/",
+            "logo": "https://hanaa-food.vercel.app/hanaa-logo.png",
+            "areaServed": "Casablanca"
+          },
+          {
+            "@type": "Restaurant",
+            "@id": "https://hanaa-food.vercel.app/#tadart",
+            "name": "Hanaa Food Tadart",
+            "telephone": "+212522501650",
+            "servesCuisine": ["Fast Food", "Tacos", "Pizza", "Sandwichs", "Burgers"],
+            "priceRange": "MAD",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "Tadart",
+              "addressLocality": "Casablanca",
+              "addressCountry": "MA"
+            },
+            "geo": {
+              "@type": "GeoCoordinates",
+              "latitude": 33.533533,
+              "longitude": -7.616479
+            },
+            "parentOrganization": { "@id": "https://hanaa-food.vercel.app/#organization" }
+          },
+          {
+            "@type": "Restaurant",
+            "@id": "https://hanaa-food.vercel.app/#amgala",
+            "name": "Hanaa Food Amgala",
+            "telephone": "+212521431103",
+            "servesCuisine": ["Fast Food", "Tacos", "Pizza", "Sandwichs", "Burgers"],
+            "priceRange": "MAD",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "Amgala",
+              "addressLocality": "Casablanca",
+              "addressCountry": "MA"
+            },
+            "geo": {
+              "@type": "GeoCoordinates",
+              "latitude": 33.544571852751574,
+              "longitude": -7.5862466958914645
+            },
+            "parentOrganization": { "@id": "https://hanaa-food.vercel.app/#organization" }
+          },
+          {
+            "@type": "Restaurant",
+            "@id": "https://hanaa-food.vercel.app/#baghdad",
+            "name": "Hanaa Food Rue Baghdad",
+            "telephone": "+212522525204",
+            "servesCuisine": ["Fast Food", "Tacos", "Pizza", "Sandwichs", "Burgers"],
+            "priceRange": "MAD",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "Rue Baghdad",
+              "addressLocality": "Casablanca",
+              "addressCountry": "MA"
+            },
+            "geo": {
+              "@type": "GeoCoordinates",
+              "latitude": 33.54931724246645,
+              "longitude": -7.594107720391539
+            },
+            "parentOrganization": { "@id": "https://hanaa-food.vercel.app/#organization" }
+          }
+        ]
+      }
+    </script>
+
     <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js"></script>
   </head>
   <body>
