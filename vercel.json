@@ -1,5 +1,8 @@
 {
   "routes": [
+    { "src": "/favicon.ico", "dest": "/hanaa-logo.png" },
+    { "src": "/apple-touch-icon.png", "dest": "/hanaa-logo.png" },
+    { "src": "/apple-touch-icon-precomposed.png", "dest": "/hanaa-logo.png" },
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/index.html" }
   ]
