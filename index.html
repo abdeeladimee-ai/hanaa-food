@@ -179,9 +179,9 @@
         if (internalPath) return;
 
         const supportPhones = {
-          tadart: { name: "Jnan Tadart", phone: "0522501650" },
-          amgala: { name: "Amgala", phone: "0521431103" },
-          "rue-baghdad": { name: "Baghdad", phone: "0522525204" },
+          tadart: "0522501650",
+          amgala: "0521431103",
+          "rue-baghdad": "0522525204",
         };
 
         try {
@@ -190,44 +190,11 @@
           if (Array.isArray(current) && current.length) {
             const next = current.map((branch) => ({
               ...branch,
-              phone: supportPhones[branch.id]?.phone || branch.phone || "",
+              phone: supportPhones[branch.id] || branch.phone || "",
             }));
             localStorage.setItem(key, JSON.stringify(next));
           }
         } catch (_) {}
-
-        const formatPhone = (phone) =>
-          String(phone).replace(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, "$1 $2 $3 $4 $5");
-
-        const addSupportCard = () => {
-          const trackingCard = document.querySelector(".tracking-card");
-          if (!trackingCard || document.getElementById("hanaa-support-phones")) return;
-
-          const box = document.createElement("section");
-          box.id = "hanaa-support-phones";
-          box.style.cssText = "margin-top:20px;padding:18px;border:1px solid #f0d6d8;border-radius:18px;background:#fff6f6;box-shadow:0 8px 24px rgba(120,0,0,.06)";
-          box.innerHTML = `
-            <div style="font-weight:900;font-size:18px;color:#351417;margin-bottom:6px">Besoin d’aide ?</div>
-            <div style="color:#866b6d;margin-bottom:14px">3ayet lina direct ila 3andek chi sou2al 3la commande.</div>
-            <div style="display:grid;gap:10px">
-              ${Object.values(supportPhones)
-                .map(
-                  ({ name, phone }) => `
-                    <a href="tel:${phone}" style="display:flex;align-items:center;justify-content:space-between;gap:12px;text-decoration:none;padding:12px 14px;border-radius:12px;background:white;border:1px solid #ead2d4;color:#351417;font-weight:800">
-                      <span>${name}</span>
-                      <span style="color:#d71920">☎ ${formatPhone(phone)}</span>
-                    </a>`,
-                )
-                .join("")}
-            </div>
-          `;
-          trackingCard.appendChild(box);
-        };
-
-        const observer = new MutationObserver(addSupportCard);
-        observer.observe(document.documentElement, { childList: true, subtree: true });
-        window.addEventListener("load", addSupportCard);
-        window.addEventListener("popstate", () => setTimeout(addSupportCard, 50));
       })();
     </script>
 
