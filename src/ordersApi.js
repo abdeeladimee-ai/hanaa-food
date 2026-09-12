@@ -1,7 +1,8 @@
 import { requireSupabase } from "./supabase";
 
 const TABLE = "orders";
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 15000;
+const ORDER_LIST_LIMIT = 200;
 
 const toRow = (order) => ({
   id: String(order.id),
@@ -104,7 +105,7 @@ export async function listOrders() {
     .from(TABLE)
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(1000);
+    .limit(ORDER_LIST_LIMIT);
 
   if (error) throw error;
 
@@ -166,7 +167,9 @@ export function subscribeOrders(onChange) {
     .subscribe();
 
   const pollTimer = window.setInterval(() => {
-    onChange?.({ type: "poll" });
+    if (document.visibilityState === "visible") {
+      onChange?.({ type: "poll" });
+    }
   }, POLL_INTERVAL_MS);
 
   return () => {
@@ -199,6 +202,8 @@ export function subscribeOrder(orderId, onChange) {
     .subscribe();
 
   const pollTimer = window.setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+
     void getOrder(orderId)
       .then((order) => {
         if (order) onChange?.(order);
