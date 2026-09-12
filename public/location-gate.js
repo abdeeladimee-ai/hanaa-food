@@ -102,6 +102,18 @@
     document.body.style.overflow = "";
   };
 
+  const syncLocationWithApp = () => {
+    const clickCurrentLocation = () => {
+      const button = Array.from(document.querySelectorAll("button")).find((item) =>
+        (item.textContent || "").toLowerCase().includes("utiliser ma position actuelle"),
+      );
+      if (button && !button.disabled) button.click();
+    };
+
+    setTimeout(clickCurrentLocation, 120);
+    setTimeout(clickCurrentLocation, 700);
+  };
+
   const requestLocation = () => {
     const allowButton = document.getElementById("hanaa-location-allow");
     const errorBox = document.getElementById("hanaa-location-error");
@@ -130,6 +142,7 @@
             }),
           );
         } catch (_) {}
+        syncLocationWithApp();
         removeGate();
       },
       (error) => {
@@ -153,7 +166,10 @@
   const start = () => {
     addStyles();
     try {
-      if (sessionStorage.getItem("hanaa-location-authorized") === "1") return;
+      if (sessionStorage.getItem("hanaa-location-authorized") === "1") {
+        syncLocationWithApp();
+        return;
+      }
     } catch (_) {}
 
     const gate = createGate();
