@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Login from "./pages/Login";
-import DeliveryOrders from "./pages/DeliveryOrders";
+import SnackOrdersLite from "./SnackOrdersLite";
 import { getSession, homePathForRole, normalizeRole } from "./auth";
 
 export default function SnackShell() {
@@ -26,11 +26,5 @@ export default function SnackShell() {
     );
   }
 
-  return (
-    <DeliveryOrders
-      role="snack"
-      session={session}
-      onHome={() => window.location.assign("/")}
-    />
-  );
+  return <SnackOrdersLite session={session} />;
 }
