@@ -254,11 +254,10 @@ export const authorizedPath = (
 
 export const getSession = () => {
   try {
-    const session = JSON.parse(
-      sessionStorage.getItem(
-        sessionKey
-      ) || "null"
-    );
+    const persistent = localStorage.getItem(sessionKey);
+    const temporary = sessionStorage.getItem(sessionKey);
+    const rawSession = persistent || temporary || "null";
+    const session = JSON.parse(rawSession);
 
     if (!session?.role) {
       return null;
@@ -272,10 +271,19 @@ export const getSession = () => {
       return null;
     }
 
-    return {
+    const normalizedSession = {
       ...session,
       role,
     };
+
+    if (!persistent) {
+      localStorage.setItem(
+        sessionKey,
+        JSON.stringify(normalizedSession)
+      );
+    }
+
+    return normalizedSession;
   } catch {
     return null;
   }
@@ -338,15 +346,19 @@ export const signIn = (
       new Date().toISOString(),
   };
 
-  sessionStorage.setItem(
+  localStorage.setItem(
     sessionKey,
     JSON.stringify(session)
   );
+  sessionStorage.removeItem(sessionKey);
 
   return session;
 };
 
 export const signOut = () => {
+  localStorage.removeItem(
+    sessionKey
+  );
   sessionStorage.removeItem(
     sessionKey
   );
