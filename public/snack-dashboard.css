@@ -1,0 +1,308 @@
+/* Hanaa Food — snack/cashier tablet dashboard */
+.workflow-snack {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-content: start;
+  padding: 18px 22px 40px !important;
+  background: #f4f5f7 !important;
+  color: #231f20;
+}
+
+.workflow-snack > .workflow-header,
+.workflow-snack > .workflow-sound,
+.workflow-snack > .workflow-notification,
+.workflow-snack > .admin-navigation,
+.workflow-snack > .workflow-filter-note,
+.workflow-snack > .workflow-actions {
+  grid-column: 1 / -1;
+}
+
+.workflow-snack .workflow-header {
+  width: 100%;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 18px 20px;
+  align-items: center !important;
+  border: 1px solid #eceff2;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(17, 24, 39, .06);
+}
+
+.workflow-snack .workflow-header img {
+  width: 72px !important;
+  height: 72px !important;
+}
+
+.workflow-snack .workflow-header h1 {
+  margin: 0 !important;
+  font-size: clamp(28px, 3.2vw, 42px) !important;
+  line-height: 1.05;
+  color: #151515;
+}
+
+.workflow-snack .workflow-role {
+  padding: 10px 14px;
+  color: #fff !important;
+  background: #d71920 !important;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+
+.workflow-snack .workflow-logout {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid #e1e4e8;
+  border-radius: 12px;
+  background: #fff;
+  color: #40444a;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.workflow-snack .admin-navigation {
+  display: none !important;
+}
+
+.workflow-snack .workflow-filter-note {
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 14px 18px !important;
+  border: 1px solid #f0d6d8 !important;
+  border-radius: 14px !important;
+  background: #fff7f7 !important;
+  color: #5a2427 !important;
+  font-size: 15px;
+}
+
+.workflow-snack > .workflow-actions {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px !important;
+  margin: 0 !important;
+}
+
+.workflow-snack > .workflow-actions button {
+  min-height: 64px;
+  border-radius: 16px !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
+  letter-spacing: .03em;
+}
+
+.workflow-snack > .workflow-actions .workflow-accept {
+  color: #fff !important;
+  border-color: #d71920 !important;
+  background: #d71920 !important;
+  box-shadow: 0 8px 20px rgba(215, 25, 32, .16);
+}
+
+.workflow-snack > .workflow-actions .workflow-details {
+  color: #333 !important;
+  border: 1px solid #e0e3e7 !important;
+  background: #fff !important;
+}
+
+.workflow-snack .workflow-sound {
+  min-height: 52px;
+  border: 0;
+  border-radius: 14px;
+  background: #111827;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+
+.workflow-snack .workflow-notification {
+  position: sticky;
+  top: 10px;
+  z-index: 20;
+  margin: 0 !important;
+  padding: 16px 18px !important;
+  border: 0 !important;
+  border-radius: 16px !important;
+  background: #111827 !important;
+  color: #fff !important;
+  box-shadow: 0 12px 28px rgba(0,0,0,.18);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.workflow-snack .workflow-orders {
+  width: 100%;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 16px !important;
+  border: 1px solid #e7eaee !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  box-shadow: 0 6px 20px rgba(17,24,39,.04);
+}
+
+.workflow-snack .workflow-section-title {
+  align-items: center;
+  margin-bottom: 12px !important;
+}
+
+.workflow-snack .workflow-section-title h2 {
+  margin: 6px 0 0 !important;
+  font-size: 18px !important;
+  color: #111827;
+}
+
+.workflow-snack .workflow-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px !important;
+  border-radius: 999px !important;
+  background: #fff1f1 !important;
+  color: #b31319 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+}
+
+.workflow-snack .workflow-live {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #ecfdf3;
+  color: #137a45 !important;
+  font-size: 11px !important;
+  font-weight: 900;
+}
+
+.workflow-snack .workflow-card {
+  margin-top: 12px !important;
+  padding: 18px !important;
+  border: 1px solid #eceef1 !important;
+  border-radius: 16px !important;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(17,24,39,.05);
+}
+
+.workflow-snack .workflow-card-top {
+  align-items: center;
+}
+
+.workflow-snack .workflow-card-top b {
+  font-size: 18px;
+  color: #111827;
+}
+
+.workflow-snack .workflow-card-top time {
+  color: #7b8189 !important;
+  font-size: 12px !important;
+}
+
+.workflow-snack .workflow-card-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 16px !important;
+  margin: 16px 0;
+}
+
+.workflow-snack .workflow-card-grid > div {
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #f8f9fa;
+}
+
+.workflow-snack .workflow-card-grid strong {
+  font-size: 18px;
+  color: #111827;
+}
+
+.workflow-snack .workflow-card-grid span {
+  color: #555b63;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.workflow-snack .workflow-card-grid > div:last-child > strong {
+  color: #d71920;
+  font-size: 24px;
+}
+
+.workflow-snack .workflow-actions {
+  gap: 10px !important;
+  flex-wrap: wrap;
+}
+
+.workflow-snack .workflow-card .workflow-actions button,
+.workflow-snack .workflow-card .workflow-actions a,
+.workflow-snack .workflow-card .workflow-actions select {
+  min-height: 50px;
+  padding: 0 16px !important;
+  border-radius: 12px !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+}
+
+.workflow-snack .workflow-card .workflow-accept {
+  flex: 1 1 180px;
+  color: #fff !important;
+  border: 0 !important;
+  background: #159447 !important;
+}
+
+.workflow-snack .workflow-card .workflow-refuse {
+  flex: 0 1 130px;
+  color: #fff !important;
+  border: 0 !important;
+  background: #d71920 !important;
+}
+
+.workflow-snack .workflow-card .workflow-details {
+  flex: 0 1 145px;
+  color: #333 !important;
+  border: 1px solid #dfe3e8 !important;
+  background: #fff !important;
+}
+
+.workflow-snack .workflow-empty {
+  min-height: 110px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed #d9dde2;
+  border-radius: 14px;
+  background: #fafbfc;
+  color: #8a9098;
+  font-size: 14px;
+}
+
+@media (min-width: 1180px) {
+  .workflow-snack {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 850px) {
+  .workflow-snack {
+    grid-template-columns: 1fr;
+    padding: 12px !important;
+  }
+
+  .workflow-snack > * {
+    grid-column: 1 !important;
+  }
+
+  .workflow-snack .workflow-header {
+    align-items: flex-start !important;
+  }
+
+  .workflow-snack .workflow-header-actions {
+    align-items: flex-end;
+    flex-direction: column;
+  }
+
+  .workflow-snack .workflow-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
