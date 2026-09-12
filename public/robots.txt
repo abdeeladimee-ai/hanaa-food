@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /snack
+Disallow: /livreur
+Disallow: /login
+
+Sitemap: https://hanaa-food.vercel.app/sitemap.xml
