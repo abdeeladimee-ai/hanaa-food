@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { getOrder, listOrders, subscribeOrders, upsertOrder } from "./ordersApi";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  getSnackOrder,
+  listSnackOrders,
+  saveSnackOrderStatus,
+  subscribeSnackOrders,
+} from "./snackOrdersApi";
 import { signOut } from "./auth";
 
 const now = () => new Date().toISOString();
@@ -23,7 +28,10 @@ const pickupStatuses = [
 ];
 
 function statusFor(order) {
-  return order?.statusLabel || (order?.orderType === "pickup" ? "NOUVELLE COMMANDE" : "NOUVELLE");
+  return (
+    order?.statusLabel ||
+    (order?.orderType === "pickup" ? "NOUVELLE COMMANDE" : "NOUVELLE")
+  );
 }
 
 export default function SnackOrdersLite({ session }) {
@@ -34,45 +42,65 @@ export default function SnackOrdersLite({ session }) {
   const [loading, setLoading] = useState(true);
   const [busyIds, setBusyIds] = useState(() => new Set());
   const [message, setMessage] = useState("");
+  const inFlightRef = useRef(false);
+  const rerunRef = useRef(false);
+  const debounceRef = useRef(null);
+
+  const loadOrders = async ({ quiet = false } = {}) => {
+    if (!branchId) return;
+    if (inFlightRef.current) {
+      rerunRef.current = true;
+      return;
+    }
+
+    inFlightRef.current = true;
+    if (!quiet) setLoading(true);
+
+    try {
+      const next = await listSnackOrders(branchId);
+      setOrders(next);
+      setMessage((current) =>
+        current.startsWith("Connexion aux commandes") ? "" : current,
+      );
+    } catch (error) {
+      console.error("Snack orders load failed:", error);
+      setMessage("Connexion aux commandes impossible. Réessayez.");
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
+      if (rerunRef.current) {
+        rerunRef.current = false;
+        void loadOrders({ quiet: true });
+      }
+    }
+  };
 
   useEffect(() => {
-    let active = true;
+    if (!branchId) return undefined;
 
-    const load = async () => {
-      try {
-        const next = await listOrders();
-        if (active) {
-          setOrders(next);
-          setMessage("");
-        }
-      } catch (error) {
-        console.error("Snack orders load failed:", error);
-        if (active) setMessage("Connexion aux commandes impossible. Réessayez.");
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-
-    void load();
+    void loadOrders();
 
     let unsubscribe = () => {};
     try {
-      unsubscribe = subscribeOrders(() => {
-        void load();
+      unsubscribe = subscribeSnackOrders(branchId, () => {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = window.setTimeout(() => {
+          void loadOrders({ quiet: true });
+        }, 350);
       });
     } catch (error) {
       console.error("Snack realtime failed:", error);
     }
 
     return () => {
-      active = false;
+      window.clearTimeout(debounceRef.current);
       unsubscribe();
     };
   }, [branchId]);
 
   const visible = useMemo(
-    () => orders.filter((order) => order.branchId === branchId && order.orderType === mode),
-    [orders, branchId, mode],
+    () => orders.filter((order) => order.orderType === mode),
+    [orders, mode],
   );
 
   const setBusy = (id, value) => {
@@ -90,27 +118,16 @@ export default function SnackOrdersLite({ session }) {
     setMessage("");
 
     try {
-      const current = await getOrder(order.id);
-      if (!current) throw new Error("Commande introuvable");
-
-      const updated = {
-        ...current,
-        ...extra,
-        statusLabel: nextStatus,
-        statusHistory: [
-          ...(current.statusHistory || []),
-          { status: nextStatus, at: now(), ...extra },
-        ],
-      };
-
-      const saved = await upsertOrder(updated);
+      const saved = await saveSnackOrderStatus(order.id, nextStatus, extra);
       setOrders((items) =>
-        items.map((item) => (String(item.id) === String(saved.id) ? saved : item)),
+        items.map((item) =>
+          String(item.id) === String(saved.id) ? saved : item,
+        ),
       );
       return saved;
     } catch (error) {
       console.error("Cashier status update failed:", error);
-      setMessage("La commande ma tconfirmatch. Vérifiez internet puis réessayez.");
+      setMessage("La commande ma tconfirmatch. Réessayez.");
       return null;
     } finally {
       setBusy(order.id, false);
@@ -118,35 +135,50 @@ export default function SnackOrdersLite({ session }) {
   };
 
   const accept = async (order) => {
-    const isPickup = order.orderType === "pickup";
-    const expected = isPickup ? "NOUVELLE COMMANDE" : "NOUVELLE";
+    if (!order?.id || busyIds.has(order.id)) return;
+    setBusy(order.id, true);
+    setMessage("");
 
-    const latest = await getOrder(order.id).catch(() => null);
-    if (!latest) {
-      setMessage("Commande introuvable. Actualisez la page.");
-      return;
-    }
+    try {
+      const latest = await getSnackOrder(order.id);
+      if (!latest) throw new Error("Commande introuvable");
 
-    if (statusFor(latest) !== expected) {
-      setOrders((items) =>
-        items.map((item) => (String(item.id) === String(latest.id) ? latest : item)),
+      const isPickup = latest.orderType === "pickup";
+      const expected = isPickup ? "NOUVELLE COMMANDE" : "NOUVELLE";
+
+      if (statusFor(latest) !== expected) {
+        setOrders((items) =>
+          items.map((item) =>
+            String(item.id) === String(latest.id) ? latest : item,
+          ),
+        );
+        setMessage("Had commande deja tbdlat. T7aynat daba.");
+        return;
+      }
+
+      const saved = await saveSnackOrderStatus(
+        latest.id,
+        isPickup ? "VALIDÉE PAR LE SNACK" : "ACCEPTÉE PAR LE CAISSIER",
+        {
+          cashierAcceptedBy: session?.id || `staff-${branchId}`,
+          cashierAcceptedAt: now(),
+          branchId,
+          ...(isPickup ? {} : { driverQueueAt: now() }),
+        },
       );
-      setMessage("Had commande deja tbdlat. T7aynat daba.");
-      return;
+
+      setOrders((items) =>
+        items.map((item) =>
+          String(item.id) === String(saved.id) ? saved : item,
+        ),
+      );
+      setMessage(`Commande #${saved.id} confirmée ✓`);
+    } catch (error) {
+      console.error("Cashier confirmation failed:", error);
+      setMessage("La commande ma tconfirmatch. Réessayez.");
+    } finally {
+      setBusy(order.id, false);
     }
-
-    const saved = await saveStatus(
-      latest,
-      isPickup ? "VALIDÉE PAR LE SNACK" : "ACCEPTÉE PAR LE CAISSIER",
-      {
-        cashierAcceptedBy: session?.id || `staff-${branchId}`,
-        cashierAcceptedAt: now(),
-        branchId,
-        ...(isPickup ? {} : { driverQueueAt: now() }),
-      },
-    );
-
-    if (saved) setMessage(`Commande #${saved.id} confirmée ✓`);
   };
 
   const refuse = async (order) => {
@@ -183,7 +215,11 @@ export default function SnackOrdersLite({ session }) {
     <main className="workflow-page workflow-snack">
       <header className="workflow-header">
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <img src="/hanaa-logo.png" alt="Hanaa Food" style={{ width: 62, height: 62, objectFit: "contain" }} />
+          <img
+            src="/hanaa-logo.png"
+            alt="Hanaa Food"
+            style={{ width: 62, height: 62, objectFit: "contain" }}
+          />
           <div>
             <small style={{ color: "#D71920", fontWeight: 900 }}>HANAA FOOD</small>
             <h1 style={{ margin: 0 }}>Commandes snack</h1>
@@ -222,16 +258,19 @@ export default function SnackOrdersLite({ session }) {
         <button
           type="button"
           className="workflow-details"
-          onClick={() => window.location.reload()}
+          disabled={loading}
+          onClick={() => void loadOrders()}
         >
-          ACTUALISER
+          {loading ? "ACTUALISATION..." : "ACTUALISER"}
         </button>
       </div>
 
       {message && <div className="workflow-notification">{message}</div>}
-      {loading && <div className="workflow-empty">Chargement des commandes...</div>}
+      {loading && !orders.length && (
+        <div className="workflow-empty">Chargement des commandes...</div>
+      )}
 
-      {!loading && statuses.map((status) => {
+      {statuses.map((status) => {
         const group = visible.filter((order) => statusFor(order) === status);
         return (
           <section className="workflow-orders workflow-status-group" key={status}>
@@ -240,83 +279,100 @@ export default function SnackOrdersLite({ session }) {
                 <span className="workflow-status">{status}</span>
                 <h2>{group.length} commande{group.length === 1 ? "" : "s"}</h2>
               </div>
-              <span className="workflow-live">Actualisation automatique</span>
+              <span className="workflow-live">Live</span>
             </div>
 
-            {group.length ? group.map((order) => {
-              const currentStatus = statusFor(order);
-              const busy = busyIds.has(order.id);
-              const canAccept =
-                currentStatus === "NOUVELLE" || currentStatus === "NOUVELLE COMMANDE";
-              const canAdvancePickup =
-                order.orderType === "pickup" &&
-                ["VALIDÉE PAR LE SNACK", "EN PRÉPARATION", "PRÊTE"].includes(currentStatus);
-              const pickupLabel =
-                currentStatus === "VALIDÉE PAR LE SNACK"
-                  ? "COMMENCER PRÉPARATION"
-                  : currentStatus === "EN PRÉPARATION"
-                    ? "MARQUER PRÊTE"
-                    : "MARQUER RÉCUPÉRÉE";
+            {group.length ? (
+              group.map((order) => {
+                const currentStatus = statusFor(order);
+                const busy = busyIds.has(order.id);
+                const canAccept =
+                  currentStatus === "NOUVELLE" ||
+                  currentStatus === "NOUVELLE COMMANDE";
+                const canAdvancePickup =
+                  order.orderType === "pickup" &&
+                  ["VALIDÉE PAR LE SNACK", "EN PRÉPARATION", "PRÊTE"].includes(
+                    currentStatus,
+                  );
+                const pickupLabel =
+                  currentStatus === "VALIDÉE PAR LE SNACK"
+                    ? "COMMENCER PRÉPARATION"
+                    : currentStatus === "EN PRÉPARATION"
+                      ? "MARQUER PRÊTE"
+                      : "MARQUER RÉCUPÉRÉE";
 
-              return (
-                <article className="workflow-card" key={order.id}>
-                  <div className="workflow-card-top">
-                    <div>
-                      <b>#{order.id}</b>
-                      <span className="workflow-status">{currentStatus}</span>
+                return (
+                  <article className="workflow-card" key={order.id}>
+                    <div className="workflow-card-top">
+                      <div>
+                        <b>#{order.id}</b>
+                        <span className="workflow-status">{currentStatus}</span>
+                      </div>
+                      <time>
+                        {new Date(order.createdAt || Date.now()).toLocaleString("fr-FR")}
+                      </time>
                     </div>
-                    <time>{new Date(order.createdAt || Date.now()).toLocaleString("fr-FR")}</time>
-                  </div>
 
-                  <div className="workflow-card-grid">
-                    <div>
-                      <strong>{order.customerName || "Client"}</strong>
-                      <span>{order.customerPhone || "Téléphone non renseigné"}</span>
-                      <span>{order.orderType === "pickup" ? "🥡 À emporter" : "🛵 Livraison"}</span>
-                      {order.orderType !== "pickup" && <span>{order.deliveryAddress || "Adresse non renseignée"}</span>}
+                    <div className="workflow-card-grid">
+                      <div>
+                        <strong>{order.customerName || "Client"}</strong>
+                        <span>{order.customerPhone || "Téléphone non renseigné"}</span>
+                        <span>
+                          {order.orderType === "pickup" ? "🥡 À emporter" : "🛵 Livraison"}
+                        </span>
+                        {order.orderType !== "pickup" && (
+                          <span>{order.deliveryAddress || "Adresse non renseignée"}</span>
+                        )}
+                      </div>
+                      <div>
+                        <span>
+                          {order.items
+                            ?.map((item) => `${item.quantity || 1} × ${item.name}`)
+                            .join(", ") || "Commande"}
+                        </span>
+                        <strong>{order.total ?? 0} DH</strong>
+                        <span>{order.paymentMethod || "Paiement à la livraison"}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span>{order.items?.map((item) => `${item.quantity || 1} × ${item.name}`).join(", ") || "Commande"}</span>
-                      <strong>{order.total ?? 0} DH</strong>
-                      <span>{order.paymentMethod || "Paiement à la livraison"}</span>
-                    </div>
-                  </div>
 
-                  <div className="workflow-actions">
-                    {canAccept && (
-                      <>
+                    <div className="workflow-actions">
+                      {canAccept && (
+                        <>
+                          <button
+                            type="button"
+                            className="workflow-accept"
+                            disabled={busy}
+                            onClick={() => void accept(order)}
+                          >
+                            {busy ? "CONFIRMATION..." : "ACCEPTER"}
+                          </button>
+                          <button
+                            type="button"
+                            className="workflow-refuse"
+                            disabled={busy}
+                            onClick={() => void refuse(order)}
+                          >
+                            REFUSER
+                          </button>
+                        </>
+                      )}
+                      {canAdvancePickup && (
                         <button
                           type="button"
                           className="workflow-accept"
                           disabled={busy}
-                          onClick={() => void accept(order)}
+                          onClick={() => void advancePickup(order)}
                         >
-                          {busy ? "CONFIRMATION..." : "ACCEPTER"}
+                          {busy ? "ENREGISTREMENT..." : pickupLabel}
                         </button>
-                        <button
-                          type="button"
-                          className="workflow-refuse"
-                          disabled={busy}
-                          onClick={() => void refuse(order)}
-                        >
-                          REFUSER
-                        </button>
-                      </>
-                    )}
-                    {canAdvancePickup && (
-                      <button
-                        type="button"
-                        className="workflow-accept"
-                        disabled={busy}
-                        onClick={() => void advancePickup(order)}
-                      >
-                        {busy ? "ENREGISTREMENT..." : pickupLabel}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              );
-            }) : <div className="workflow-empty">Aucune commande.</div>}
+                      )}
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <div className="workflow-empty">Aucune commande.</div>
+            )}
           </section>
         );
       })}
