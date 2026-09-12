@@ -173,6 +173,11 @@
 
     <script>
       (() => {
+        const internalPath = ["/login", "/admin", "/snack", "/livreur"].some((prefix) =>
+          window.location.pathname.toLowerCase().startsWith(prefix),
+        );
+        if (internalPath) return;
+
         const supportPhones = {
           tadart: { name: "Jnan Tadart", phone: "0522501650" },
           amgala: { name: "Amgala", phone: "0521431103" },
