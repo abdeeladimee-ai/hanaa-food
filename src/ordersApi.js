@@ -1,6 +1,7 @@
 import { requireSupabase } from "./supabase";
 
 const TABLE = "orders";
+const POLL_INTERVAL_MS = 3000;
 
 const toRow = (order) => ({
   id: String(order.id),
@@ -164,7 +165,12 @@ export function subscribeOrders(onChange) {
     )
     .subscribe();
 
+  const pollTimer = window.setInterval(() => {
+    onChange?.({ type: "poll" });
+  }, POLL_INTERVAL_MS);
+
   return () => {
+    window.clearInterval(pollTimer);
     void supabase.removeChannel(channel);
   };
 }
@@ -192,7 +198,18 @@ export function subscribeOrder(orderId, onChange) {
     )
     .subscribe();
 
+  const pollTimer = window.setInterval(() => {
+    void getOrder(orderId)
+      .then((order) => {
+        if (order) onChange?.(order);
+      })
+      .catch((error) => {
+        console.error("Order polling fallback failed:", error);
+      });
+  }, POLL_INTERVAL_MS);
+
   return () => {
+    window.clearInterval(pollTimer);
     void supabase.removeChannel(channel);
   };
 }
