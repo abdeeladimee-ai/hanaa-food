@@ -79,6 +79,7 @@
       @media (max-width: 520px) {
         #${OVERLAY_ID} { padding: 16px; }
         #${OVERLAY_ID} .hanaa-location-card { padding: 26px 19px; border-radius: 20px; }
+        #${OVERLAY_ID} img { width: 90px; max-width: 32vw; margin-bottom: 10px; }
         #${OVERLAY_ID} h1 { font-size: 23px; }
       }
     `;
