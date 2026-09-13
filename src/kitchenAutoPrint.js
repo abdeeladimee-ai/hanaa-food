@@ -1,7 +1,9 @@
 import { getOrder } from "./ordersApi";
 
 const PRINTED_PREFIX = "hanaa-kitchen-printed:";
-const PRINTER_HINT = "imp cuisine";
+const DEFAULT_PRINTER_HINT = "imp cuisine";
+const AMGALA_COLD_PRINTER_HINT = "froid";
+const AMGALA_HOT_PRINTER_HINT = "chaud";
 const MAX_ACCEPT_AGE_MS = 15 * 60 * 1000;
 const inFlight = new Set();
 const attempted = new Set();
@@ -53,6 +55,14 @@ const CATEGORY_LABELS = {
   supplements: "SUPPLEMENTS",
   boissons: "BOISSONS",
 };
+
+const AMGALA_COLD_CATEGORIES = new Set([
+  "SALADES",
+  "JUS",
+  "SUPPLEMENT JUS",
+  "DESSERTS",
+  "BOISSONS",
+]);
 
 function isSnackPage() {
   return typeof window !== "undefined" && window.location.pathname === "/snack";
@@ -139,6 +149,24 @@ function groupItemsByCategory(items) {
   return [...groups.entries()];
 }
 
+function splitAmgalaItems(items) {
+  const cold = [];
+  const hot = [];
+
+  items.forEach((item) => {
+    if (AMGALA_COLD_CATEGORIES.has(categoryLabel(item))) cold.push(item);
+    else hot.push(item);
+  });
+
+  return { cold, hot };
+}
+
+function isAmgalaOrder(order) {
+  const branchId = String(order?.branchId || "").trim().toLowerCase();
+  const branchName = String(order?.branchName || "").trim().toLowerCase();
+  return branchId === "amgala" || branchName.includes("amgala");
+}
+
 function acceptedAt(order) {
   if (order.cashierAcceptedAt) return new Date(order.cashierAcceptedAt).getTime();
   const history = Array.isArray(order.statusHistory) ? order.statusHistory : [];
@@ -167,29 +195,31 @@ async function getQz() {
   return qz;
 }
 
-async function findKitchenPrinter(qz) {
-  const printers = await qz.printers.find();
+function findPrinter(printers, hint) {
   if (!Array.isArray(printers)) return null;
 
   const exact = printers.find(
-    (name) => String(name).trim().toLowerCase() === PRINTER_HINT,
+    (name) => String(name).trim().toLowerCase() === hint.toLowerCase(),
   );
   if (exact) return exact;
 
   return (
     printers.find((name) =>
-      String(name).toLowerCase().includes(PRINTER_HINT),
+      String(name).toLowerCase().includes(hint.toLowerCase()),
     ) || null
   );
 }
 
-function buildKitchenTicket(order) {
+function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
   const ESC = "\x1B";
   const GS = "\x1D";
   const separator = "------------------------------------------\n";
   const lines = [ESC + "@", ESC + "a" + "\x01"];
 
   lines.push(ESC + "!" + "\x30", "CUISINE\n", ESC + "!" + "\x00");
+  if (stationLabel) {
+    lines.push(ESC + "E" + "\x01", `${clean(stationLabel)}\n`, ESC + "E" + "\x00");
+  }
   lines.push("HANAA FOOD\n");
   if (order.branchName) lines.push(`${clean(order.branchName)}\n`);
   lines.push(separator);
@@ -198,7 +228,11 @@ function buildKitchenTicket(order) {
   lines.push(`${new Date(order.createdAt || Date.now()).toLocaleString("fr-FR")}\n`);
   lines.push(separator, ESC + "a" + "\x00", "\n");
 
-  const items = Array.isArray(order.items) ? order.items : [];
+  const items = Array.isArray(ticketItems)
+    ? ticketItems
+    : Array.isArray(order.items)
+      ? order.items
+      : [];
   const groups = groupItemsByCategory(items);
 
   groups.forEach(([category, categoryItems], groupIndex) => {
@@ -261,16 +295,44 @@ async function printKitchenOrder(orderId) {
     }
 
     const qz = await getQz();
-    const printer = await findKitchenPrinter(qz);
-    if (!printer) {
-      console.warn("Imprimante cuisine 'imp cuisine' introuvable.");
-      return;
+    const printers = await qz.printers.find();
+    if (!Array.isArray(printers) || !printers.length) {
+      throw new Error("Aucune imprimante cuisine detectee.");
     }
 
-    const config = qz.configs.create(printer, { encoding: "CP858" });
-    await qz.print(config, buildKitchenTicket(order));
+    const printedOn = [];
+
+    if (isAmgalaOrder(order)) {
+      const items = Array.isArray(order.items) ? order.items : [];
+      const { cold, hot } = splitAmgalaItems(items);
+
+      if (cold.length) {
+        const coldPrinter = findPrinter(printers, AMGALA_COLD_PRINTER_HINT);
+        if (!coldPrinter) throw new Error("Imprimante cuisine 'froid' introuvable.");
+        const coldConfig = qz.configs.create(coldPrinter, { encoding: "CP858" });
+        await qz.print(coldConfig, buildKitchenTicket(order, cold, "FROID"));
+        printedOn.push(coldPrinter);
+      }
+
+      if (hot.length) {
+        const hotPrinter = findPrinter(printers, AMGALA_HOT_PRINTER_HINT);
+        if (!hotPrinter) throw new Error("Imprimante cuisine 'chaud' introuvable.");
+        const hotConfig = qz.configs.create(hotPrinter, { encoding: "CP858" });
+        await qz.print(hotConfig, buildKitchenTicket(order, hot, "CHAUD"));
+        printedOn.push(hotPrinter);
+      }
+    } else {
+      const printer = findPrinter(printers, DEFAULT_PRINTER_HINT);
+      if (!printer) throw new Error("Imprimante cuisine 'imp cuisine' introuvable.");
+      const config = qz.configs.create(printer, { encoding: "CP858" });
+      await qz.print(config, buildKitchenTicket(order));
+      printedOn.push(printer);
+    }
+
+    if (!printedOn.length) throw new Error("Aucun article cuisine a imprimer.");
+
     localStorage.setItem(printedKey, new Date().toISOString());
-    console.info(`Ticket cuisine #${orderId} imprime sur ${printer}.`);
+    console.info(`Ticket cuisine #${orderId} imprime sur ${printedOn.join(" + ")}.`);
   } catch (error) {
     console.error(`Impression cuisine impossible pour #${orderId}:`, error);
   } finally {
