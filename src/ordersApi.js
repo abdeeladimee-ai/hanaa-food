@@ -2,6 +2,17 @@ import { requireSupabase } from "./supabase";
 
 const TABLE = "orders";
 const POLL_INTERVAL_MS = 15000;
+const REALTIME_DEBOUNCE_MS = 250;
+
+let listOrdersInFlight = null;
+const getOrderInFlight = new Map();
+
+const ordersSubscribers = new Set();
+let sharedOrdersChannel = null;
+let sharedOrdersPollTimer = null;
+let sharedOrdersNotifyTimer = null;
+let pendingOrdersPayload = null;
+let sharedOrdersSupabase = null;
 
 const toRow = (order) => ({
   id: String(order.id),
@@ -98,31 +109,57 @@ const fromRow = (row) => ({
 });
 
 export async function listOrders() {
-  const supabase = requireSupabase();
+  if (listOrdersInFlight) return listOrdersInFlight;
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(200);
+  const request = (async () => {
+    const supabase = requireSupabase();
 
-  if (error) throw error;
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(200);
 
-  return (data || []).map(fromRow);
+    if (error) throw error;
+
+    return (data || []).map(fromRow);
+  })();
+
+  listOrdersInFlight = request;
+
+  try {
+    return await request;
+  } finally {
+    if (listOrdersInFlight === request) listOrdersInFlight = null;
+  }
 }
 
 export async function getOrder(orderId) {
-  const supabase = requireSupabase();
+  const key = String(orderId);
+  const existing = getOrderInFlight.get(key);
+  if (existing) return existing;
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("*")
-    .eq("id", String(orderId))
-    .maybeSingle();
+  const request = (async () => {
+    const supabase = requireSupabase();
 
-  if (error) throw error;
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select("*")
+      .eq("id", key)
+      .maybeSingle();
 
-  return data ? fromRow(data) : null;
+    if (error) throw error;
+
+    return data ? fromRow(data) : null;
+  })();
+
+  getOrderInFlight.set(key, request);
+
+  try {
+    return await request;
+  } finally {
+    if (getOrderInFlight.get(key) === request) getOrderInFlight.delete(key);
+  }
 }
 
 export async function createOrder(order) {
@@ -153,25 +190,84 @@ export async function upsertOrder(order) {
   return fromRow(data);
 }
 
-export function subscribeOrders(onChange) {
-  const supabase = requireSupabase();
+function flushOrdersNotification() {
+  sharedOrdersNotifyTimer = null;
+  const payload = pendingOrdersPayload;
+  pendingOrdersPayload = null;
 
-  const channel = supabase
-    .channel(`hanaa-orders-${Math.random().toString(36).slice(2)}`)
+  for (const subscriber of [...ordersSubscribers]) {
+    try {
+      subscriber(payload);
+    } catch (error) {
+      console.error("Order subscriber callback failed:", error);
+    }
+  }
+}
+
+function scheduleOrdersNotification(payload) {
+  pendingOrdersPayload = payload;
+  if (sharedOrdersNotifyTimer != null) return;
+
+  sharedOrdersNotifyTimer = window.setTimeout(
+    flushOrdersNotification,
+    REALTIME_DEBOUNCE_MS,
+  );
+}
+
+function startSharedOrdersSubscription() {
+  if (sharedOrdersChannel || !ordersSubscribers.size) return;
+
+  const supabase = requireSupabase();
+  sharedOrdersSupabase = supabase;
+
+  sharedOrdersChannel = supabase
+    .channel(`hanaa-orders-shared-${Math.random().toString(36).slice(2)}`)
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: TABLE },
-      (payload) => onChange?.(payload),
+      (payload) => scheduleOrdersNotification(payload),
     )
     .subscribe();
 
-  const pollTimer = window.setInterval(() => {
-    onChange?.({ type: "poll" });
+  sharedOrdersPollTimer = window.setInterval(() => {
+    scheduleOrdersNotification({ type: "poll" });
   }, POLL_INTERVAL_MS);
+}
 
+function stopSharedOrdersSubscription() {
+  if (sharedOrdersPollTimer != null) {
+    window.clearInterval(sharedOrdersPollTimer);
+    sharedOrdersPollTimer = null;
+  }
+
+  if (sharedOrdersNotifyTimer != null) {
+    window.clearTimeout(sharedOrdersNotifyTimer);
+    sharedOrdersNotifyTimer = null;
+  }
+
+  pendingOrdersPayload = null;
+
+  if (sharedOrdersChannel && sharedOrdersSupabase) {
+    void sharedOrdersSupabase.removeChannel(sharedOrdersChannel);
+  }
+
+  sharedOrdersChannel = null;
+  sharedOrdersSupabase = null;
+}
+
+export function subscribeOrders(onChange) {
+  if (typeof onChange !== "function") return () => {};
+
+  ordersSubscribers.add(onChange);
+  startSharedOrdersSubscription();
+
+  let active = true;
   return () => {
-    window.clearInterval(pollTimer);
-    void supabase.removeChannel(channel);
+    if (!active) return;
+    active = false;
+
+    ordersSubscribers.delete(onChange);
+    if (!ordersSubscribers.size) stopSharedOrdersSubscription();
   };
 }
 
