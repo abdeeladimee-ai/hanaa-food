@@ -1,10 +1,15 @@
 import { getOrder } from "./ordersApi";
 
 const QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
-const PRINTER_NAME = "imp caisse";
+const PRINTER_NAME = "froid";
+const CASHIER_PRINTER_STORAGE_KEY = "hanaa-qz-printer";
 
 let qzScriptPromise;
 let connectPromise;
+
+if (typeof window !== "undefined" && window.location.pathname === "/snack") {
+  localStorage.setItem(CASHIER_PRINTER_STORAGE_KEY, PRINTER_NAME);
+}
 
 function loadQz() {
   if (window.qz) return Promise.resolve(window.qz);
