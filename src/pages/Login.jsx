@@ -6,11 +6,11 @@ export default function Login({ onSuccess }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
     setError("");
 
-    const session = signIn(identifier, password);
+    const session = await signIn(identifier, password);
 
     if (!session) {
       setError("Téléphone / email ou mot de passe incorrect.");
