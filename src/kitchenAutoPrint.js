@@ -8,6 +8,52 @@ const attempted = new Set();
 let connectPromise = null;
 let scanScheduled = false;
 
+const CATEGORY_RANGES = [
+  [1, 5, "SALADES"],
+  [6, 11, "PATES"],
+  [12, 25, "PIZZAS"],
+  [26, 31, "PASTICCIOS"],
+  [32, 36, "TAPAS"],
+  [37, 41, "WRAPS"],
+  [42, 44, "GRILLADES"],
+  [45, 52, "PLATS"],
+  [53, 68, "BURGERS"],
+  [69, 73, "SANDWICHS CLASSIQUES"],
+  [74, 97, "SANDWICHS SPECIAUX"],
+  [98, 104, "TACOS CLASSIQUES"],
+  [105, 107, "MINI TACOS"],
+  [108, 117, "TACOS SPECIAUX"],
+  [118, 124, "BOWLS"],
+  [125, 139, "JUS"],
+  [140, 143, "SUPPLEMENT JUS"],
+  [144, 147, "DESSERTS"],
+  [148, 162, "SUPPLEMENTS"],
+  [163, 169, "BOISSONS"],
+];
+
+const CATEGORY_LABELS = {
+  salades: "SALADES",
+  pates: "PATES",
+  pizzas: "PIZZAS",
+  pasticcios: "PASTICCIOS",
+  tapas: "TAPAS",
+  wraps: "WRAPS",
+  grillades: "GRILLADES",
+  plats: "PLATS",
+  burgers: "BURGERS",
+  "sandwichs-classiques": "SANDWICHS CLASSIQUES",
+  "sandwichs-speciaux": "SANDWICHS SPECIAUX",
+  "tacos-classiques": "TACOS CLASSIQUES",
+  "mini-tacos": "MINI TACOS",
+  "tacos-speciaux": "TACOS SPECIAUX",
+  bowls: "BOWLS",
+  jus: "JUS",
+  "supplement-jus": "SUPPLEMENT JUS",
+  desserts: "DESSERTS",
+  supplements: "SUPPLEMENTS",
+  boissons: "BOISSONS",
+};
+
 function isSnackPage() {
   return typeof window !== "undefined" && window.location.pathname === "/snack";
 }
@@ -62,6 +108,35 @@ function itemDetails(item) {
       return text ? `${label}: ${text}` : "";
     })
     .filter(Boolean);
+}
+
+function categoryLabel(item) {
+  const direct =
+    item.categoryId || item.subcategoryId || item.category || item.categoryName || "";
+  const normalized = String(direct).trim().toLowerCase();
+  if (CATEGORY_LABELS[normalized]) return CATEGORY_LABELS[normalized];
+
+  const productId = Number(item.productId ?? item.id);
+  if (Number.isFinite(productId)) {
+    const range = CATEGORY_RANGES.find(
+      ([start, end]) => productId >= start && productId <= end,
+    );
+    if (range) return range[2];
+  }
+
+  return "ARTICLES";
+}
+
+function groupItemsByCategory(items) {
+  const groups = new Map();
+
+  items.forEach((item) => {
+    const category = categoryLabel(item);
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(item);
+  });
+
+  return [...groups.entries()];
 }
 
 function acceptedAt(order) {
@@ -121,23 +196,45 @@ function buildKitchenTicket(order) {
   lines.push(ESC + "!" + "\x30", `#${clean(order.id)}\n`, ESC + "!" + "\x00");
   lines.push(`${order.orderType === "pickup" ? "A EMPORTER" : "LIVRAISON"}\n`);
   lines.push(`${new Date(order.createdAt || Date.now()).toLocaleString("fr-FR")}\n`);
-  lines.push(separator, ESC + "a" + "\x00");
+  lines.push(separator, ESC + "a" + "\x00", "\n");
 
   const items = Array.isArray(order.items) ? order.items : [];
-  items.forEach((item) => {
-    const qty = Number(item.quantity || 1);
-    const name = clean(item.name || item.title || "Produit");
-    lines.push(ESC + "E" + "\x01", ESC + "!" + "\x10");
-    lines.push(`${qty} X ${name}\n`);
-    lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
-    itemDetails(item).forEach((detail) => lines.push(`   - ${clean(detail)}\n`));
-    lines.push("\n");
+  const groups = groupItemsByCategory(items);
+
+  groups.forEach(([category, categoryItems], groupIndex) => {
+    if (groupIndex > 0) lines.push(separator, "\n");
+
+    lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01");
+    lines.push(`--- ${clean(category)} ---\n`);
+    lines.push(ESC + "E" + "\x00", ESC + "a" + "\x00", "\n");
+
+    categoryItems.forEach((item, itemIndex) => {
+      const qty = Number(item.quantity || 1);
+      const name = clean(item.name || item.title || "Produit");
+
+      lines.push(ESC + "E" + "\x01", ESC + "!" + "\x10");
+      lines.push(`${qty} X ${name}\n`);
+      lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
+
+      const details = itemDetails(item);
+      if (details.length) {
+        lines.push("\n");
+        details.forEach((detail) => lines.push(`  ${clean(detail)}\n`));
+      }
+
+      if (itemIndex < categoryItems.length - 1) {
+        lines.push("\n\n");
+      } else {
+        lines.push("\n");
+      }
+    });
   });
 
   if (order.notes || order.note) {
-    lines.push(separator);
-    lines.push(ESC + "E" + "\x01", "NOTE CUISINE:\n", ESC + "E" + "\x00");
-    lines.push(`${clean(order.notes || order.note)}\n`);
+    lines.push(separator, "\n");
+    lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", "NOTE CUISINE\n");
+    lines.push(ESC + "E" + "\x00", ESC + "a" + "\x00");
+    lines.push(`${clean(order.notes || order.note)}\n\n`);
   }
 
   lines.push(separator, ESC + "a" + "\x01", "BONNE PREPARATION\n", "\n\n\n");
