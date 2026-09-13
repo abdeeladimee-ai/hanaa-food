@@ -7,6 +7,11 @@ if (
   typeof window !== 'undefined' &&
   (window.location.pathname === '/snack' || window.location.pathname.startsWith('/snack/'))
 ) {
+  const snackCss = document.createElement('link')
+  snackCss.rel = 'stylesheet'
+  snackCss.href = '/snack-dashboard.css'
+  document.head.appendChild(snackCss)
+
   void import('./qzAutoPrint.js')
   void import('./kitchenAutoPrint.js')
 }
