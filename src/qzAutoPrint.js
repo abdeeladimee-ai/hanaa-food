@@ -2,6 +2,7 @@ import { getOrder } from "./ordersApi";
 
 const QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
 const PRINTER_NAME = "imp caisse";
+const TICKET_WIDTH = 42;
 
 let qzScriptPromise;
 let connectPromise;
@@ -65,6 +66,47 @@ function clean(value) {
     .trim();
 }
 
+function padRight(value, width) {
+  const text = String(value ?? "").slice(0, width);
+  return text + " ".repeat(Math.max(0, width - text.length));
+}
+
+function padLeft(value, width) {
+  const text = String(value ?? "").slice(0, width);
+  return " ".repeat(Math.max(0, width - text.length)) + text;
+}
+
+function wrapText(value, width) {
+  const text = clean(value);
+  if (!text) return [];
+
+  const rows = [];
+  let row = "";
+
+  for (const word of text.split(" ")) {
+    const next = row ? `${row} ${word}` : word;
+    if (next.length <= width) {
+      row = next;
+      continue;
+    }
+
+    if (row) rows.push(row);
+    if (word.length <= width) {
+      row = word;
+      continue;
+    }
+
+    for (let index = 0; index < word.length; index += width) {
+      const part = word.slice(index, index + width);
+      if (part.length === width) rows.push(part);
+      else row = part;
+    }
+  }
+
+  if (row) rows.push(row);
+  return rows;
+}
+
 function detailText(value) {
   if (value == null || value === "" || value === false) return "";
   if (Array.isArray(value)) {
@@ -112,46 +154,60 @@ function buildTicket(order) {
   const GS = "\x1D";
   const lines = [];
   const isPickup = order.orderType === "pickup";
-  const separator = "------------------------------------------\n";
+  const separator = `${"-".repeat(TICKET_WIDTH)}\n`;
 
   lines.push(ESC + "@", ESC + "a" + "\x01", ESC + "E" + "\x01");
   lines.push("HANAA FOOD\n");
   lines.push(ESC + "E" + "\x00");
   if (order.branchName) lines.push(clean(order.branchName) + "\n");
-  lines.push(`${isPickup ? "A EMPORTER" : "LIVRAISON"}\n`);
-  lines.push(`COMMANDE #${clean(order.id)}\n`);
+  lines.push(`${isPickup ? "A EMPORTER" : "LIVRAISON"}\n\n`);
+
+  lines.push(ESC + "E" + "\x01", ESC + "!" + "\x30");
+  lines.push(`#${clean(order.id)}\n`);
+  lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
   lines.push(`${new Date(order.createdAt || Date.now()).toLocaleString("fr-FR")}\n`);
   lines.push(separator);
   lines.push(ESC + "a" + "\x00");
 
   if (order.customerName) lines.push(`CLIENT: ${clean(order.customerName)}\n`);
   if (order.customerPhone) lines.push(`TEL: ${clean(order.customerPhone)}\n`);
-  if (!isPickup && order.deliveryAddress) lines.push(`ADRESSE: ${clean(order.deliveryAddress)}\n`);
+  if (!isPickup && order.deliveryAddress) {
+    wrapText(`ADRESSE: ${order.deliveryAddress}`, TICKET_WIDTH).forEach((row) => lines.push(`${row}\n`));
+  }
   if (!isPickup && order.distanceKm != null) lines.push(`DISTANCE: ${money(order.distanceKm)} KM\n`);
 
   lines.push(separator);
-  lines.push(ESC + "E" + "\x01", "ARTICLES\n", ESC + "E" + "\x00");
+  lines.push(ESC + "E" + "\x01");
+  lines.push(`${padRight("QTE", 4)}${padRight("PRODUIT", 26)}${padLeft("TOTAL", 12)}\n`);
+  lines.push(ESC + "E" + "\x00");
+  lines.push(separator);
 
   (order.items || []).forEach((item) => {
-    const qty = Number(item.quantity || 1);
-    const name = clean(item.name || item.title || "Article");
+    const qty = Math.max(1, Number(item.quantity || 1));
+    const name = clean(item.name || item.title || "Article") || "Article";
     const lineTotal = Number(item.price || 0) * qty;
-    lines.push(`${qty} x ${name}`);
-    if (lineTotal) lines.push(`  ${money(lineTotal)} DH`);
-    lines.push("\n");
-    itemDetails(item).forEach((detail) => lines.push(`  - ${clean(detail)}\n`));
+    const nameRows = wrapText(name, 26);
+    const firstName = nameRows.shift() || "Article";
+
+    lines.push(`${padLeft(qty, 3)} ${padRight(firstName, 26)}${padLeft(`${money(lineTotal)} DH`, 12)}\n`);
+    nameRows.forEach((part) => lines.push(`    ${part}\n`));
+    itemDetails(item).forEach((detail) => {
+      wrapText(detail, 36).forEach((part) => lines.push(`    - ${part}\n`));
+    });
   });
 
   lines.push(separator);
-  if (order.subtotal != null) lines.push(`SOUS-TOTAL: ${money(order.subtotal)} DH\n`);
-  if (!isPickup) lines.push(`LIVRAISON: ${money(order.deliveryFee)} DH\n`);
+  if (order.subtotal != null) lines.push(`${padRight("SOUS-TOTAL", 28)}${padLeft(`${money(order.subtotal)} DH`, 14)}\n`);
+  if (!isPickup) lines.push(`${padRight("LIVRAISON", 28)}${padLeft(`${money(order.deliveryFee)} DH`, 14)}\n`);
   lines.push(ESC + "E" + "\x01");
-  lines.push(`TOTAL: ${money(order.total)} DH\n`);
+  lines.push(`${padRight("TOTAL", 26)}${padLeft(`${money(order.total)} DH`, 16)}\n`);
   lines.push(ESC + "E" + "\x00");
   lines.push(`PAIEMENT: ${clean(order.paymentMethod || "A la livraison")}\n`);
-  if (order.notes || order.note) lines.push(`NOTE: ${clean(order.notes || order.note)}\n`);
+  if (order.notes || order.note) {
+    wrapText(`NOTE: ${order.notes || order.note}`, TICKET_WIDTH).forEach((row) => lines.push(`${row}\n`));
+  }
   lines.push(separator);
-  lines.push(ESC + "a" + "\x01", "MERCI ET BON APPETIT\n", "\n\n\n");
+  lines.push(ESC + "a" + "\x01", "MERCI POUR VOTRE COMMANDE\n", "BON APPETIT !\n", "\n\n\n");
   lines.push(GS + "V" + "\x41" + "\x00");
 
   return lines;
