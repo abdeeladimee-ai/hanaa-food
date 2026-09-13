@@ -1,14 +1,34 @@
 import { getOrder } from "./ordersApi";
 
 const QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
-const PRINTER_NAME = "caisse";
+const SESSION_KEY = "hanaa-auth-session";
 const CASHIER_PRINTER_STORAGE_KEY = "hanaa-qz-printer";
 
 let qzScriptPromise;
 let connectPromise;
 
-if (typeof window !== "undefined" && window.location.pathname === "/snack") {
-  localStorage.setItem(CASHIER_PRINTER_STORAGE_KEY, PRINTER_NAME);
+function currentBranchId() {
+  try {
+    const session = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
+    return String(session?.branchId || "").trim().toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function cashierPrinterHints() {
+  if (currentBranchId() === "amgala") return ["imp caisse", "caisse"];
+  return ["caisse", "imp caisse"];
+}
+
+function syncCashierPrinterHint() {
+  if (typeof window === "undefined" || window.location.pathname !== "/snack") return;
+  const [preferred] = cashierPrinterHints();
+  if (preferred) localStorage.setItem(CASHIER_PRINTER_STORAGE_KEY, preferred);
+}
+
+if (typeof window !== "undefined") {
+  syncCashierPrinterHint();
 }
 
 function loadQz() {
@@ -162,6 +182,26 @@ function buildTicket(order) {
   return lines;
 }
 
+function findCashierPrinter(printers) {
+  const hints = cashierPrinterHints();
+
+  for (const hint of hints) {
+    const exact = printers.find(
+      (name) => String(name).trim().toLowerCase() === hint.toLowerCase(),
+    );
+    if (exact) return exact;
+  }
+
+  for (const hint of hints) {
+    const partial = printers.find((name) =>
+      String(name).toLowerCase().includes(hint.toLowerCase()),
+    );
+    if (partial) return partial;
+  }
+
+  return printers.length === 1 ? printers[0] : null;
+}
+
 export async function printCashierOrder(order) {
   const qz = await getQz();
   const printers = await qz.printers.find();
@@ -169,15 +209,12 @@ export async function printCashierOrder(order) {
     throw new Error("Aucune imprimante detectee.");
   }
 
-  const preferred = printers.find((name) =>
-    String(name).toLowerCase().includes(PRINTER_NAME.toLowerCase()),
-  );
-  const printer = preferred || (printers.length === 1 ? printers[0] : null);
-
+  const printer = findCashierPrinter(printers);
   if (!printer) {
-    throw new Error(`Imprimante '${PRINTER_NAME}' introuvable.`);
+    throw new Error(`Imprimante caisse introuvable (${cashierPrinterHints().join(" / ")}).`);
   }
 
+  localStorage.setItem(CASHIER_PRINTER_STORAGE_KEY, printer);
   const config = qz.configs.create(printer, { encoding: "CP858" });
   await qz.print(config, buildTicket(order));
   return printer;
@@ -234,7 +271,7 @@ function addPrintButton(card) {
       button.textContent = originalText;
       button.disabled = false;
       window.alert(
-        `Ticket ma khrejch. Khalli QZ Tray ma7loul w verifie imprimante '${PRINTER_NAME}'.\n${error?.message || error}`,
+        `Ticket ma khrejch. Khalli QZ Tray ma7loul w verifie imprimante caisse (${cashierPrinterHints().join(" / ")}).\n${error?.message || error}`,
       );
     }
   });
@@ -270,6 +307,7 @@ function installManualPrintButtons() {
 
   const syncButtons = () => {
     if (window.location.pathname !== "/snack") return;
+    syncCashierPrinterHint();
     document.querySelectorAll(".workflow-snack .workflow-card").forEach(addPrintButton);
   };
 
