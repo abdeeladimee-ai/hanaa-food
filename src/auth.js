@@ -50,7 +50,7 @@ const devAccounts = [
     role: "SNACK",
     branchId: "rue-baghdad",
     branchName: "Hanaa Food Rue Baghdad",
-    name: "Caisse Rue Baghdad",
+    name: "Hajar",
   },
   {
     id: "driver-dev",
@@ -248,8 +248,10 @@ export const signIn = async (identifier, password) => {
       item.email && String(item.email).toLowerCase() === lowerValue;
     const samePhone =
       item.phone && normalizePhone(item.phone) === phoneValue;
+    const sameName =
+      item.name && String(item.name).trim().toLowerCase() === lowerValue;
 
-    if (!sameEmail && !samePhone) continue;
+    if (!sameEmail && !samePhone && !sameName) continue;
 
     const passwordMatches = item.passwordHash
       ? item.passwordHash === enteredHash
