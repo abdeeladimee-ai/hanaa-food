@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './customerLocationGate.js'
 import './qzAutoPrint.js'
 import './kitchenAutoPrint.js'
 import App from './App.jsx'
