@@ -11,23 +11,33 @@ const devAccounts = [
   {
     id: "admin-dev",
     email: "admin@hanaa-food.test",
-    password: "admin123",
+    passwordHash: "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
     role: "ADMIN",
     name: "Admin Hanaa Food",
   },
   {
     id: "snack-tadart-dev",
     email: "snack@hanaa-food.test",
-    password: "snack123",
+    passwordHash: "00e38a2374c9eb01d3e7f763a549028a07fcaea6478e3f01f899364baa40c96b",
     role: "SNACK",
     branchId: "tadart",
     branchName: "Hanaa Food Tadart",
     name: "Caisse Tadart",
   },
   {
+    id: "snack-jnan-tadart",
+    phone: "0630012136",
+    passwordHash: "d150f3db3cdbaa934c701b9b98dfdeace78542ecff20ce3713abbd5bd4920d04",
+    role: "SNACK",
+    branchId: "tadart",
+    branchName: "Hanaa Food Tadart",
+    name: "Caisse Jnan Tadart",
+    active: true,
+  },
+  {
     id: "snack-amgala-dev",
     email: "amgala@hanaa-food.test",
-    password: "amgala123",
+    passwordHash: "36758f157740a12393c885a7fa45ce0957447cb1ca836f5e6b25bf656046f420",
     role: "SNACK",
     branchId: "amgala",
     branchName: "Hanaa Food Amgala",
@@ -36,7 +46,7 @@ const devAccounts = [
   {
     id: "snack-rue-baghdad-dev",
     email: "baghdad@hanaa-food.test",
-    password: "baghdad123",
+    passwordHash: "f80640ac2bbd19fc684156554cf440be40785417123617554356bca7a9688055",
     role: "SNACK",
     branchId: "rue-baghdad",
     branchName: "Hanaa Food Rue Baghdad",
@@ -45,7 +55,7 @@ const devAccounts = [
   {
     id: "driver-dev",
     email: "livreur@hanaa-food.test",
-    password: "driver123",
+    passwordHash: "494d022492052a06f8f81949639a1d148c1051fa3d4e4688fbd96efe649cd382",
     role: "LIVREUR",
     name: "Livreur 1",
   },
@@ -54,20 +64,24 @@ const devAccounts = [
 const normalizePhone = (value) =>
   String(value || "").replace(/[^\d+]/g, "").trim();
 
+const hashPassword = async (value) => {
+  const input = new TextEncoder().encode(String(value || ""));
+  const digest = await window.crypto.subtle.digest("SHA-256", input);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+};
+
 export const normalizeRole = (role) => {
   const value = String(role || "").toUpperCase();
 
   if (["ADMIN", "ADMINISTRATOR"].includes(value)) return "ADMIN";
 
-  if (
-    ["SNACK", "CASHIER", "STAFF", "BRANCH_STAFF"].includes(value)
-  ) {
+  if (["SNACK", "CASHIER", "STAFF", "BRANCH_STAFF"].includes(value)) {
     return "SNACK";
   }
 
-  if (
-    ["LIVREUR", "DRIVER", "DELIVERY_DRIVER"].includes(value)
-  ) {
+  if (["LIVREUR", "DRIVER", "DELIVERY_DRIVER"].includes(value)) {
     return "LIVREUR";
   }
 
@@ -76,10 +90,7 @@ export const normalizeRole = (role) => {
 
 export const getStaffAccounts = () => {
   try {
-    const saved = JSON.parse(
-      localStorage.getItem(staffKey) || "[]"
-    );
-
+    const saved = JSON.parse(localStorage.getItem(staffKey) || "[]");
     return Array.isArray(saved) ? saved : [];
   } catch {
     return [];
@@ -87,14 +98,8 @@ export const getStaffAccounts = () => {
 };
 
 const saveStaffAccounts = (accounts) => {
-  localStorage.setItem(
-    staffKey,
-    JSON.stringify(accounts)
-  );
-
-  window.dispatchEvent(
-    new Event("hanaa-staff-updated")
-  );
+  localStorage.setItem(staffKey, JSON.stringify(accounts));
+  window.dispatchEvent(new Event("hanaa-staff-updated"));
 };
 
 export const addStaffAccount = ({
@@ -109,23 +114,14 @@ export const addStaffAccount = ({
   const cleanPassword = String(password || "");
   const cleanRole = normalizeRole(role);
 
-  if (
-    !cleanName ||
-    !cleanPhone ||
-    cleanPassword.length < 4 ||
-    !cleanRole
-  ) {
+  if (!cleanName || !cleanPhone || cleanPassword.length < 4 || !cleanRole) {
     return {
       ok: false,
-      error:
-        "Kammel smiya, téléphone, rôle w mot de passe.",
+      error: "Kammel smiya, téléphone, rôle w mot de passe.",
     };
   }
 
-  if (
-    cleanRole === "SNACK" &&
-    !branchNames[branchId]
-  ) {
+  if (cleanRole === "SNACK" && !branchNames[branchId]) {
     return {
       ok: false,
       error: "Khtar branche dyal caissier.",
@@ -133,10 +129,8 @@ export const addStaffAccount = ({
   }
 
   const current = getStaffAccounts();
-
   const exists = current.some(
-    (item) =>
-      normalizePhone(item.phone) === cleanPhone
+    (item) => normalizePhone(item.phone) === cleanPhone,
   );
 
   if (exists) {
@@ -146,10 +140,7 @@ export const addStaffAccount = ({
     };
   }
 
-  const prefix =
-    cleanRole === "LIVREUR"
-      ? "driver"
-      : "snack";
+  const prefix = cleanRole === "LIVREUR" ? "driver" : "snack";
 
   const account = {
     id: `${prefix}-${Date.now()}`,
@@ -159,20 +150,15 @@ export const addStaffAccount = ({
     name: cleanName,
     active: true,
     createdAt: new Date().toISOString(),
-
     ...(cleanRole === "SNACK"
       ? {
           branchId,
-          branchName:
-            branchNames[branchId],
+          branchName: branchNames[branchId],
         }
       : {}),
   };
 
-  saveStaffAccounts([
-    account,
-    ...current,
-  ]);
+  saveStaffAccounts([account, ...current]);
 
   return {
     ok: true,
@@ -181,23 +167,18 @@ export const addStaffAccount = ({
 };
 
 export const deleteStaffAccount = (id) => {
-  const next = getStaffAccounts().filter(
-    (item) => item.id !== id
-  );
-
+  const next = getStaffAccounts().filter((item) => item.id !== id);
   saveStaffAccounts(next);
 };
 
 export const toggleStaffAccount = (id) => {
-  const next = getStaffAccounts().map(
-    (item) =>
-      item.id === id
-        ? {
-            ...item,
-            active:
-              item.active === false,
-          }
-        : item
+  const next = getStaffAccounts().map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          active: item.active === false,
+        }
+      : item,
   );
 
   saveStaffAccounts(next);
@@ -210,67 +191,37 @@ export const homePathForRole = (role) =>
     LIVREUR: "/livreur",
   })[normalizeRole(role)] || "/login";
 
-export const allowedRolesForPath = (
-  path
-) => {
-  if (path === "/snack") {
-    return ["SNACK"];
-  }
+export const allowedRolesForPath = (path) => {
+  if (path === "/snack") return ["SNACK"];
+  if (path === "/livreur") return ["LIVREUR"];
 
-  if (path === "/livreur") {
-    return ["LIVREUR"];
-  }
-
-  if (
-    path === "/admin" ||
-    path.startsWith("/admin/")
-  ) {
+  if (path === "/admin" || path.startsWith("/admin/")) {
     return ["ADMIN"];
   }
 
   return null;
 };
 
-export const authorizedPath = (
-  path,
-  session
-) => {
-  const allowedRoles =
-    allowedRolesForPath(path);
+export const authorizedPath = (path, session) => {
+  const allowedRoles = allowedRolesForPath(path);
 
-  if (!allowedRoles) {
-    return path;
-  }
+  if (!allowedRoles) return path;
 
-  const role = normalizeRole(
-    session?.role
-  );
+  const role = normalizeRole(session?.role);
 
-  return role &&
-    allowedRoles.includes(role)
+  return role && allowedRoles.includes(role)
     ? path
     : homePathForRole(role);
 };
 
 export const getSession = () => {
   try {
-    const session = JSON.parse(
-      sessionStorage.getItem(
-        sessionKey
-      ) || "null"
-    );
+    const session = JSON.parse(sessionStorage.getItem(sessionKey) || "null");
 
-    if (!session?.role) {
-      return null;
-    }
+    if (!session?.role) return null;
 
-    const role = normalizeRole(
-      session.role
-    );
-
-    if (!role) {
-      return null;
-    }
+    const role = normalizeRole(session.role);
+    if (!role) return null;
 
     return {
       ...session,
@@ -281,81 +232,52 @@ export const getSession = () => {
   }
 };
 
-export const signIn = (
-  identifier,
-  password
-) => {
-  const value = String(
-    identifier || ""
-  ).trim();
+export const signIn = async (identifier, password) => {
+  const value = String(identifier || "").trim();
+  const lowerValue = value.toLowerCase();
+  const phoneValue = normalizePhone(value);
+  const enteredHash = await hashPassword(password);
 
-  const lowerValue =
-    value.toLowerCase();
+  const accounts = [...devAccounts, ...getStaffAccounts()];
+  let account = null;
 
-  const phoneValue =
-    normalizePhone(value);
+  for (const item of accounts) {
+    if (item.active === false) continue;
 
-  const accounts = [
-    ...devAccounts,
-    ...getStaffAccounts(),
-  ];
+    const sameEmail =
+      item.email && String(item.email).toLowerCase() === lowerValue;
+    const samePhone =
+      item.phone && normalizePhone(item.phone) === phoneValue;
 
-  const account = accounts.find(
-    (item) => {
-      if (item.active === false) {
-        return false;
-      }
+    if (!sameEmail && !samePhone) continue;
 
-      const sameEmail =
-        item.email &&
-        String(item.email)
-          .toLowerCase() ===
-          lowerValue;
+    const passwordMatches = item.passwordHash
+      ? item.passwordHash === enteredHash
+      : item.password === password;
 
-      const samePhone =
-        item.phone &&
-        normalizePhone(
-          item.phone
-        ) === phoneValue;
-
-      return (
-        (sameEmail || samePhone) &&
-        item.password === password
-      );
+    if (passwordMatches) {
+      account = item;
+      break;
     }
-  );
-
-  if (!account) {
-    return null;
   }
 
+  if (!account) return null;
+
+  const { password: _password, passwordHash: _passwordHash, ...safeAccount } = account;
   const session = {
-    ...account,
-    role: normalizeRole(
-      account.role
-    ),
-    authenticatedAt:
-      new Date().toISOString(),
+    ...safeAccount,
+    role: normalizeRole(account.role),
+    authenticatedAt: new Date().toISOString(),
   };
 
-  sessionStorage.setItem(
-    sessionKey,
-    JSON.stringify(session)
-  );
-
+  sessionStorage.setItem(sessionKey, JSON.stringify(session));
   return session;
 };
 
 export const signOut = () => {
-  sessionStorage.removeItem(
-    sessionKey
-  );
+  sessionStorage.removeItem(sessionKey);
 };
 
-export const testAccounts =
-  devAccounts.map(
-    ({ password, ...account }) => ({
-      ...account,
-      password,
-    })
-  );
+export const testAccounts = devAccounts.map(
+  ({ passwordHash: _passwordHash, ...account }) => account,
+);
