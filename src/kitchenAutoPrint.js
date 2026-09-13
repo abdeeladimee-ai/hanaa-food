@@ -1,10 +1,12 @@
 import { getOrder } from "./ordersApi";
 
+const QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
 const MODE_KEY = "hanaa-kitchen-mode";
 const PRINTED_PREFIX = "hanaa-kitchen-printed:";
 const PRINTER_HINT = "chaud";
 const MAX_ACCEPT_AGE_MS = 15 * 60 * 1000;
 const inFlight = new Set();
+let qzScriptPromise = null;
 let connectPromise = null;
 
 function kitchenModeEnabled() {
@@ -79,14 +81,47 @@ function acceptedAt(order) {
   return accepted?.at ? new Date(accepted.at).getTime() : NaN;
 }
 
+function loadQz() {
+  if (window.qz) return Promise.resolve(window.qz);
+  if (qzScriptPromise) return qzScriptPromise;
+
+  qzScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${QZ_SCRIPT_URL}"]`);
+
+    if (existing) {
+      if (window.qz) {
+        resolve(window.qz);
+        return;
+      }
+
+      existing.addEventListener("load", () => resolve(window.qz), { once: true });
+      existing.addEventListener(
+        "error",
+        () => reject(new Error("Impossible de charger QZ Tray.")),
+        { once: true },
+      );
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = QZ_SCRIPT_URL;
+    script.async = true;
+    script.onload = () => resolve(window.qz);
+    script.onerror = () => reject(new Error("Impossible de charger QZ Tray."));
+    document.head.appendChild(script);
+  });
+
+  return qzScriptPromise;
+}
+
 async function getQz() {
-  const qz = window.qz;
-  if (!qz) throw new Error("QZ Tray JavaScript ma tchargach.");
+  const qz = await loadQz();
+  if (!qz) throw new Error("QZ Tray n'est pas disponible.");
   if (qz.websocket.isActive()) return qz;
 
   if (!connectPromise) {
     connectPromise = qz.websocket
-      .connect({ retries: 2, delay: 1 })
+      .connect({ retries: 3, delay: 1 })
       .finally(() => {
         connectPromise = null;
       });
