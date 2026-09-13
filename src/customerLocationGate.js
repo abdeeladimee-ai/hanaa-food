@@ -205,9 +205,9 @@ function requestLocation() {
   }
 
   navigator.geolocation.getCurrentPosition(onLocationSuccess, onLocationError, {
-    enableHighAccuracy: true,
-    timeout: 12000,
-    maximumAge: 60000,
+    enableHighAccuracy: false,
+    timeout: 7000,
+    maximumAge: 300000,
   });
 }
 
