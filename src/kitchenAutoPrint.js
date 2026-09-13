@@ -127,8 +127,10 @@ function buildKitchenTicket(order) {
   items.forEach((item) => {
     const qty = Number(item.quantity || 1);
     const name = clean(item.name || item.title || "Produit");
-    lines.push(ESC + "E" + "\x01", `${qty} x ${name}\n`, ESC + "E" + "\x00");
-    itemDetails(item).forEach((detail) => lines.push(`   ${clean(detail)}\n`));
+    lines.push(ESC + "E" + "\x01", ESC + "!" + "\x10");
+    lines.push(`${qty} X ${name}\n`);
+    lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
+    itemDetails(item).forEach((detail) => lines.push(`   - ${clean(detail)}\n`));
     lines.push("\n");
   });
 
