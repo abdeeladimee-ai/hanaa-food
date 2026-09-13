@@ -1,7 +1,7 @@
 import { getOrder } from "./ordersApi";
 
 const QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
-const PRINTER_NAME = "froid";
+const PRINTER_NAME = "caisse";
 const CASHIER_PRINTER_STORAGE_KEY = "hanaa-qz-printer";
 
 let qzScriptPromise;
