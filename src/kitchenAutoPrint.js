@@ -1,7 +1,7 @@
 import { getOrder } from "./ordersApi";
 
 const PRINTED_PREFIX = "hanaa-kitchen-printed:";
-const PRINTER_HINT = "chaud";
+const PRINTER_HINT = "imp cuisine";
 const MAX_ACCEPT_AGE_MS = 15 * 60 * 1000;
 const inFlight = new Set();
 const attempted = new Set();
@@ -263,7 +263,7 @@ async function printKitchenOrder(orderId) {
     const qz = await getQz();
     const printer = await findKitchenPrinter(qz);
     if (!printer) {
-      console.warn("Imprimante cuisine 'chaud' introuvable.");
+      console.warn("Imprimante cuisine 'imp cuisine' introuvable.");
       return;
     }
 
