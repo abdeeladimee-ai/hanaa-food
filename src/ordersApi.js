@@ -3,6 +3,9 @@ import { requireSupabase } from "./supabase";
 const TABLE = "orders";
 const POLL_INTERVAL_MS = 15000;
 const REALTIME_DEBOUNCE_MS = 250;
+const STAFF_SESSION_KEY = "hanaa-auth-session";
+const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
+const LEGACY_CLIENT_ORDER_KEY = "hanaa-order";
 
 let listOrdersInFlight = null;
 const getOrderInFlight = new Map();
@@ -13,6 +16,63 @@ let sharedOrdersPollTimer = null;
 let sharedOrdersNotifyTimer = null;
 let pendingOrdersPayload = null;
 let sharedOrdersSupabase = null;
+
+function hasStaffSession() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    const session = JSON.parse(sessionStorage.getItem(STAFF_SESSION_KEY) || "null");
+    const role = String(session?.role || "").trim().toUpperCase();
+    return ["ADMIN", "SNACK", "LIVREUR"].includes(role);
+  } catch {
+    return false;
+  }
+}
+
+function readClientOrderIds() {
+  if (typeof window === "undefined") return [];
+
+  const ids = new Set();
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(CLIENT_ORDER_IDS_KEY) || "[]");
+    if (Array.isArray(saved)) {
+      saved.forEach((id) => {
+        const value = String(id || "").trim();
+        if (value) ids.add(value);
+      });
+    }
+  } catch {
+    // Ignore invalid local client history.
+  }
+
+  try {
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_CLIENT_ORDER_KEY) || "null");
+    const legacyId = String(legacy?.id || "").trim();
+    if (legacyId) ids.add(legacyId);
+  } catch {
+    // Ignore invalid legacy order.
+  }
+
+  return [...ids];
+}
+
+function rememberClientOrder(orderId) {
+  if (typeof window === "undefined" || hasStaffSession()) return;
+
+  const id = String(orderId || "").trim();
+  if (!id) return;
+
+  const ids = new Set(readClientOrderIds());
+  ids.add(id);
+  localStorage.setItem(CLIENT_ORDER_IDS_KEY, JSON.stringify([...ids].slice(-50)));
+}
+
+function customerCanReadOrder(orderId) {
+  if (hasStaffSession()) return true;
+  const id = String(orderId || "").trim();
+  return Boolean(id) && readClientOrderIds().includes(id);
+}
 
 const toRow = (order) => ({
   id: String(order.id),
@@ -113,12 +173,20 @@ export async function listOrders() {
 
   const request = (async () => {
     const supabase = requireSupabase();
+    const staff = hasStaffSession();
+    const clientOrderIds = staff ? [] : readClientOrderIds();
 
-    const { data, error } = await supabase
+    if (!staff && !clientOrderIds.length) return [];
+
+    let query = supabase
       .from(TABLE)
       .select("*")
       .order("created_at", { ascending: false })
       .limit(200);
+
+    if (!staff) query = query.in("id", clientOrderIds);
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
@@ -136,6 +204,8 @@ export async function listOrders() {
 
 export async function getOrder(orderId) {
   const key = String(orderId);
+  if (!customerCanReadOrder(key)) return null;
+
   const existing = getOrderInFlight.get(key);
   if (existing) return existing;
 
@@ -173,7 +243,9 @@ export async function createOrder(order) {
 
   if (error) throw error;
 
-  return fromRow(data);
+  const savedOrder = fromRow(data);
+  rememberClientOrder(savedOrder.id);
+  return savedOrder;
 }
 
 export async function upsertOrder(order) {
@@ -215,19 +287,21 @@ function scheduleOrdersNotification(payload) {
 }
 
 function startSharedOrdersSubscription() {
-  if (sharedOrdersChannel || !ordersSubscribers.size) return;
+  if (sharedOrdersChannel || sharedOrdersPollTimer != null || !ordersSubscribers.size) return;
 
   const supabase = requireSupabase();
   sharedOrdersSupabase = supabase;
 
-  sharedOrdersChannel = supabase
-    .channel(`hanaa-orders-shared-${Math.random().toString(36).slice(2)}`)
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: TABLE },
-      (payload) => scheduleOrdersNotification(payload),
-    )
-    .subscribe();
+  if (hasStaffSession()) {
+    sharedOrdersChannel = supabase
+      .channel(`hanaa-orders-shared-${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: TABLE },
+        (payload) => scheduleOrdersNotification(payload),
+      )
+      .subscribe();
+  }
 
   sharedOrdersPollTimer = window.setInterval(() => {
     scheduleOrdersNotification({ type: "poll" });
@@ -272,6 +346,8 @@ export function subscribeOrders(onChange) {
 }
 
 export function subscribeOrder(orderId, onChange) {
+  if (!customerCanReadOrder(orderId)) return () => {};
+
   const supabase = requireSupabase();
 
   const channel = supabase
