@@ -1,7 +1,7 @@
 import { requireSupabase } from "./supabase";
 
 const TABLE = "orders";
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 15000;
 
 const toRow = (order) => ({
   id: String(order.id),
@@ -104,7 +104,7 @@ export async function listOrders() {
     .from(TABLE)
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(1000);
+    .limit(200);
 
   if (error) throw error;
 
