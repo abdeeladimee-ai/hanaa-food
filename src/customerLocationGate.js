@@ -105,9 +105,36 @@ function ensureGate() {
     ?.addEventListener("click", requestLocation);
 }
 
+function autoSelectNearestDeliveryBranch() {
+  if (!isCustomerPage()) return;
+
+  const trySelect = () => {
+    const picker = document.querySelector(".branch-picker.delivery-branches");
+    if (!picker) return false;
+
+    const recommended = picker.querySelector("button.recommended");
+    if (!recommended) return false;
+    if (recommended.classList.contains("selected")) return true;
+
+    recommended.click();
+    return true;
+  };
+
+  if (trySelect()) return;
+
+  const observer = new MutationObserver(() => {
+    if (trySelect()) observer.disconnect();
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  window.setTimeout(() => observer.disconnect(), 15000);
+}
+
 let autoLocationClicked = false;
 function syncLocationIntoApp() {
-  if (autoLocationClicked) return;
+  if (autoLocationClicked) {
+    autoSelectNearestDeliveryBranch();
+    return;
+  }
 
   const tryClick = () => {
     if (autoLocationClicked || !isCustomerPage()) return;
@@ -120,6 +147,7 @@ function syncLocationIntoApp() {
     if (!button) return;
     autoLocationClicked = true;
     button.click();
+    autoSelectNearestDeliveryBranch();
   };
 
   tryClick();
