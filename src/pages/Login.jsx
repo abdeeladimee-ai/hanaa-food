@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { signIn } from "../auth";
+import { signInNamedCashier } from "../cashierAccounts";
 
 export default function Login({ onSuccess }) {
   const [identifier, setIdentifier] = useState("");
@@ -10,10 +11,11 @@ export default function Login({ onSuccess }) {
     event.preventDefault();
     setError("");
 
-    const session = await signIn(identifier, password);
+    let session = await signIn(identifier, password);
+    if (!session) session = signInNamedCashier(identifier, password);
 
     if (!session) {
-      setError("Téléphone / email ou mot de passe incorrect.");
+      setError("Smiya / téléphone / email ou mot de passe incorrect.");
       return;
     }
 
@@ -37,17 +39,17 @@ export default function Login({ onSuccess }) {
         <p style={{ ...styles.eyebrow, textAlign: "center" }}>HANAA FOOD</p>
         <h1 style={styles.title}>Connexion équipe</h1>
         <p style={styles.text}>
-          Dkhol b numéro téléphone li zed lik admin w mot de passe.
+          Dkhol b smiya, numéro téléphone ou email w mot de passe.
         </p>
 
         <label style={styles.label}>
-          Téléphone ou email
+          Smiya, téléphone ou email
           <input
             style={styles.input}
             type="text"
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
-            placeholder="06XXXXXXXX"
+            placeholder="Smiya ou 06XXXXXXXX"
             autoComplete="username"
             required
           />
