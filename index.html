@@ -10,7 +10,6 @@
     <meta name="description" content="Hanaa Food — commande en ligne, livraison et à emporter." />
     <link rel="stylesheet" href="/snack-dashboard.css" />
     <title>Hanaa Food</title>
-    <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js"></script>
   </head>
   <body>
     <div id="root"></div>
@@ -63,14 +62,28 @@
           trackingCard.appendChild(box);
         };
 
-        const observer = new MutationObserver(addSupportCard);
-        observer.observe(document.documentElement, { childList: true, subtree: true });
         window.addEventListener("load", addSupportCard);
         window.addEventListener("popstate", () => setTimeout(addSupportCard, 50));
+        document.addEventListener("click", () => setTimeout(addSupportCard, 0), true);
+
+        const isSnack =
+          window.location.pathname === "/snack" ||
+          window.location.pathname.startsWith("/snack/");
+
+        if (isSnack) {
+          const qzScript = document.createElement("script");
+          qzScript.src = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
+          qzScript.async = true;
+          document.head.appendChild(qzScript);
+
+          const soundScript = document.createElement("script");
+          soundScript.src = "/snack-pickup-sound.js";
+          soundScript.defer = true;
+          document.body.appendChild(soundScript);
+        }
       })();
     </script>
 
-    <script src="/snack-pickup-sound.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
