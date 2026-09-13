@@ -1,19 +1,15 @@
 import { getOrder } from "./ordersApi";
 
-const MODE_KEY = "hanaa-kitchen-mode";
 const PRINTED_PREFIX = "hanaa-kitchen-printed:";
 const PRINTER_HINT = "chaud";
 const MAX_ACCEPT_AGE_MS = 15 * 60 * 1000;
 const inFlight = new Set();
+const attempted = new Set();
 let connectPromise = null;
+let scanScheduled = false;
 
-function kitchenModeEnabled() {
-  if (typeof window === "undefined") return false;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("kitchen") === "1") {
-    localStorage.setItem(MODE_KEY, "1");
-  }
-  return window.location.pathname === "/snack" && localStorage.getItem(MODE_KEY) === "1";
+function isSnackPage() {
+  return typeof window !== "undefined" && window.location.pathname === "/snack";
 }
 
 function clean(value) {
@@ -91,6 +87,7 @@ async function getQz() {
         connectPromise = null;
       });
   }
+
   await connectPromise;
   return qz;
 }
@@ -98,10 +95,12 @@ async function getQz() {
 async function findKitchenPrinter(qz) {
   const printers = await qz.printers.find();
   if (!Array.isArray(printers)) return null;
+
   const exact = printers.find(
     (name) => String(name).trim().toLowerCase() === PRINTER_HINT,
   );
   if (exact) return exact;
+
   return (
     printers.find((name) =>
       String(name).toLowerCase().includes(PRINTER_HINT),
@@ -113,10 +112,10 @@ function buildKitchenTicket(order) {
   const ESC = "\x1B";
   const GS = "\x1D";
   const separator = "------------------------------------------\n";
-  const lines = [ESC + "@", ESC + "a" + "\x01", ESC + "E" + "\x01"];
+  const lines = [ESC + "@", ESC + "a" + "\x01"];
 
-  lines.push("HANAA FOOD\n", "CUISINE\n");
-  lines.push(ESC + "E" + "\x00");
+  lines.push(ESC + "!" + "\x30", "CUISINE\n", ESC + "!" + "\x00");
+  lines.push("HANAA FOOD\n");
   if (order.branchName) lines.push(`${clean(order.branchName)}\n`);
   lines.push(separator);
   lines.push(ESC + "!" + "\x30", `#${clean(order.id)}\n`, ESC + "!" + "\x00");
@@ -124,15 +123,19 @@ function buildKitchenTicket(order) {
   lines.push(`${new Date(order.createdAt || Date.now()).toLocaleString("fr-FR")}\n`);
   lines.push(separator, ESC + "a" + "\x00");
 
-  (order.items || []).forEach((item) => {
+  const items = Array.isArray(order.items) ? order.items : [];
+  items.forEach((item) => {
     const qty = Number(item.quantity || 1);
     const name = clean(item.name || item.title || "Produit");
     lines.push(ESC + "E" + "\x01", `${qty} x ${name}\n`, ESC + "E" + "\x00");
-    itemDetails(item).forEach((detail) => lines.push(`  - ${clean(detail)}\n`));
+    itemDetails(item).forEach((detail) => lines.push(`   ${clean(detail)}\n`));
+    lines.push("\n");
   });
 
   if (order.notes || order.note) {
-    lines.push(separator, `NOTE: ${clean(order.notes || order.note)}\n`);
+    lines.push(separator);
+    lines.push(ESC + "E" + "\x01", "NOTE CUISINE:\n", ESC + "E" + "\x00");
+    lines.push(`${clean(order.notes || order.note)}\n`);
   }
 
   lines.push(separator, ESC + "a" + "\x01", "BONNE PREPARATION\n", "\n\n\n");
@@ -141,18 +144,20 @@ function buildKitchenTicket(order) {
 }
 
 async function printKitchenOrder(orderId) {
-  if (!orderId || inFlight.has(orderId)) return;
+  if (!orderId || inFlight.has(orderId) || attempted.has(orderId)) return;
+
   const printedKey = `${PRINTED_PREFIX}${orderId}`;
   if (localStorage.getItem(printedKey)) return;
 
+  attempted.add(orderId);
   inFlight.add(orderId);
+
   try {
     const order = await getOrder(orderId);
     if (!order) return;
 
     const acceptedTime = acceptedAt(order);
     if (!Number.isFinite(acceptedTime) || Date.now() - acceptedTime > MAX_ACCEPT_AGE_MS) {
-      localStorage.setItem(printedKey, "old");
       return;
     }
 
@@ -175,11 +180,16 @@ async function printKitchenOrder(orderId) {
 }
 
 function scanAcceptedOrders() {
-  if (!kitchenModeEnabled()) return;
+  scanScheduled = false;
+  if (!isSnackPage()) return;
 
   document.querySelectorAll(".workflow-snack .workflow-card").forEach((card) => {
-    const status = card.querySelector(".workflow-card-top .workflow-status")?.textContent?.trim() || "";
-    if (!["ACCEPTÉE PAR LE CAISSIER", "VALIDÉE PAR LE SNACK"].includes(status)) return;
+    const status =
+      card.querySelector(".workflow-card-top .workflow-status")?.textContent?.trim() || "";
+
+    if (!["ACCEPTÉE PAR LE CAISSIER", "VALIDÉE PAR LE SNACK"].includes(status)) {
+      return;
+    }
 
     const rawId = card.querySelector(".workflow-card-top b")?.textContent || "";
     const orderId = rawId.replace(/^#/, "").trim();
@@ -187,9 +197,16 @@ function scanAcceptedOrders() {
   });
 }
 
+function scheduleScan() {
+  if (!isSnackPage() || scanScheduled) return;
+  scanScheduled = true;
+  window.requestAnimationFrame(scanAcceptedOrders);
+}
+
 if (typeof window !== "undefined") {
-  window.addEventListener("load", scanAcceptedOrders);
-  window.addEventListener("popstate", () => setTimeout(scanAcceptedOrders, 100));
-  setInterval(scanAcceptedOrders, 2500);
-  setTimeout(scanAcceptedOrders, 800);
+  const observer = new MutationObserver(scheduleScan);
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener("load", scheduleScan);
+  window.addEventListener("popstate", scheduleScan);
+  setTimeout(scheduleScan, 500);
 }
