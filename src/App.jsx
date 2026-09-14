@@ -162,6 +162,25 @@ const branches = (() => {
   }
 })();
 
+const HANAA_OPEN_MINUTES = 12 * 60;
+const HANAA_CLOSE_MINUTES = 3 * 60;
+const HANAA_HOURS_LABEL = "12:00 – 03:00";
+function casablancaMinutesNow() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Casablanca",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((part) => part.type === "hour")?.value || 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value || 0);
+  return hour * 60 + minute;
+}
+function isHanaaOpenNow() {
+  const minutes = casablancaMinutesNow();
+  return minutes >= HANAA_OPEN_MINUTES || minutes < HANAA_CLOSE_MINUTES;
+}
+
 const routingEndpoint = "https://router.project-osrm.org/route/v1/driving";
 async function geocodePlace(query) {
   const response = await fetch(
@@ -927,6 +946,14 @@ function App() {
         .filter((item) => item.quantity > 0),
     );
   const place = async (details) => {
+    if (!isHanaaOpenNow()) {
+      window.alert("Hanaa Food est fermé. Horaires: 12:00 – 03:00.");
+      return;
+    }
+    if (branch && branch.isOpen === false) {
+      window.alert("Ce point de vente est fermé pour le moment.");
+      return;
+    }
     const next = {
       id: `HF${Math.floor(1000 + Math.random() * 8999)}`,
       customerName: details.name,
@@ -1199,6 +1226,21 @@ function Home({
 }) {
   return (
     <main>
+      <div
+        style={{
+          margin: "10px 16px 12px",
+          padding: "10px 14px",
+          borderRadius: 14,
+          background: isHanaaOpenNow() ? "#ecfdf3" : "#fff1f2",
+          border: isHanaaOpenNow() ? "1px solid #bbf7d0" : "1px solid #fecdd3",
+          color: "#18181b",
+          fontWeight: 800,
+          fontSize: 14,
+          textAlign: "center",
+        }}
+      >
+        {isHanaaOpenNow() ? "🟢 Ouvert" : "🔴 Fermé"} · Horaires : {HANAA_HOURS_LABEL}
+      </div>
       
       <section className="menu-section">
         <div className="section-heading">
