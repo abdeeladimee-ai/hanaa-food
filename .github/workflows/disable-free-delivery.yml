@@ -1,0 +1,83 @@
+name: Disable free delivery permanently
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/disable-free-delivery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  disable-free-delivery:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove free delivery logic and text
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          app = Path('src/App.jsx')
+          text = app.read_text(encoding='utf-8')
+
+          # Remove free-delivery threshold settings from the client config.
+          text = re.sub(r'^\s*freeDeliveryThreshold:\s*\d+(?:\.\d+)?,\s*\n', '', text, flags=re.M)
+
+          # Delivery must always use the distance-zone fee; never become free because of order value.
+          text, count = re.subn(
+              r'\n\s*if \(subtotal >= branch\.deliveryPricingSettings\.freeDeliveryThreshold\)\s*\n\s*return 0;',
+              '',
+              text,
+          )
+          if count == 0:
+              raise SystemExit('Free delivery condition was not found in App.jsx; refusing unsafe edit.')
+
+          text = re.sub(
+              r'✓\s*Livraison offerte dès\s*\d+\s*DH\s*　?✓\s*Paiement à la livraison',
+              '✓ Frais de livraison selon la distance　✓ Paiement à la livraison',
+              text,
+          )
+
+          app.write_text(text, encoding='utf-8')
+
+          admin = Path('src/pages/AdminDashboard.jsx')
+          admin_text = admin.read_text(encoding='utf-8')
+          admin_text = re.sub(r'^\s*freeDeliveryThreshold:\s*\d+(?:\.\d+)?,\s*\n', '', admin_text, flags=re.M)
+          admin.write_text(admin_text, encoding='utf-8')
+
+          for path in (app, admin):
+              final = path.read_text(encoding='utf-8')
+              if 'freeDeliveryThreshold' in final:
+                  raise SystemExit(f'freeDeliveryThreshold still present in {path}')
+              if 'Livraison offerte' in final:
+                  raise SystemExit(f'Free-delivery text still present in {path}')
+
+          print('Free delivery removed permanently from client/admin logic.')
+          PY
+
+      - name: Verify production build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit change
+        shell: bash
+        run: |
+          if git diff --quiet -- src/App.jsx src/pages/AdminDashboard.jsx; then
+            echo 'No source change needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.jsx src/pages/AdminDashboard.jsx
+          git commit -m 'Remove free delivery completely'
+          git push origin HEAD:main
