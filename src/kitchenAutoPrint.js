@@ -1,12 +1,12 @@
 import { getOrder } from "./ordersApi";
 
 const PRINTED_PREFIX = "hanaa-kitchen-printed:";
+const QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
 const DEFAULT_PRINTER_HINT = "imp cuisine";
 const AMGALA_COLD_PRINTER_HINT = "froid";
 const AMGALA_HOT_PRINTER_HINT = "chaud";
 const MAX_ACCEPT_AGE_MS = 15 * 60 * 1000;
 const inFlight = new Set();
-const attempted = new Set();
 let connectPromise = null;
 let scanScheduled = false;
 
@@ -178,14 +178,33 @@ function acceptedAt(order) {
   return accepted?.at ? new Date(accepted.at).getTime() : NaN;
 }
 
+async function waitForQzScript() {
+  if (window.qz) return window.qz;
+
+  let script = document.querySelector(`script[src="${QZ_SCRIPT_URL}"]`);
+  if (!script) {
+    script = document.createElement("script");
+    script.src = QZ_SCRIPT_URL;
+    script.async = true;
+    document.head.appendChild(script);
+  }
+
+  const startedAt = Date.now();
+  while (!window.qz && Date.now() - startedAt < 10000) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  if (!window.qz) throw new Error("QZ Tray JavaScript ma tchargach.");
+  return window.qz;
+}
+
 async function getQz() {
-  const qz = window.qz;
-  if (!qz) throw new Error("QZ Tray JavaScript ma tchargach.");
+  const qz = await waitForQzScript();
   if (qz.websocket.isActive()) return qz;
 
   if (!connectPromise) {
     connectPromise = qz.websocket
-      .connect({ retries: 2, delay: 1 })
+      .connect({ retries: 5, delay: 1 })
       .finally(() => {
         connectPromise = null;
       });
@@ -277,12 +296,11 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
 }
 
 async function printKitchenOrder(orderId) {
-  if (!orderId || inFlight.has(orderId) || attempted.has(orderId)) return;
+  if (!orderId || inFlight.has(orderId)) return;
 
   const printedKey = `${PRINTED_PREFIX}${orderId}`;
   if (localStorage.getItem(printedKey)) return;
 
-  attempted.add(orderId);
   inFlight.add(orderId);
 
   try {
@@ -370,4 +388,5 @@ if (typeof window !== "undefined") {
   window.addEventListener("load", scheduleScan);
   window.addEventListener("popstate", scheduleScan);
   setTimeout(scheduleScan, 500);
+  setInterval(scheduleScan, 3000);
 }
