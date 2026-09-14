@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set opening hours 12:00 to 03:00
+      - name: Update opening hours safely
         shell: bash
         run: |
           python - <<'PY'
@@ -29,31 +29,32 @@ jobs:
           text = path.read_text(encoding='utf-8')
           original = text
 
-          helper_marker = 'const HANAA_OPEN_MINUTES = 12 * 60;'
-          if helper_marker not in text:
+          if 'const HANAA_OPEN_MINUTES = 12 * 60;' not in text:
               anchor = 'const routingEndpoint = "https://router.project-osrm.org/route/v1/driving";'
               if anchor not in text:
                   raise SystemExit('Safety check failed: routing anchor not found.')
-              helper = '''const HANAA_OPEN_MINUTES = 12 * 60;
-const HANAA_CLOSE_MINUTES = 3 * 60;
-const HANAA_HOURS_LABEL = "12:00 – 03:00";
-function casablancaMinutesNow() {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Africa/Casablanca",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date());
-  const hour = Number(parts.find((part) => part.type === "hour")?.value || 0);
-  const minute = Number(parts.find((part) => part.type === "minute")?.value || 0);
-  return hour * 60 + minute;
-}
-function isHanaaOpenNow() {
-  const minutes = casablancaMinutesNow();
-  return minutes >= HANAA_OPEN_MINUTES || minutes < HANAA_CLOSE_MINUTES;
-}
-
-'''
+              helper_lines = [
+                  'const HANAA_OPEN_MINUTES = 12 * 60;',
+                  'const HANAA_CLOSE_MINUTES = 3 * 60;',
+                  'const HANAA_HOURS_LABEL = "12:00 – 03:00";',
+                  'function casablancaMinutesNow() {',
+                  '  const parts = new Intl.DateTimeFormat("en-GB", {',
+                  '    timeZone: "Africa/Casablanca",',
+                  '    hour: "2-digit",',
+                  '    minute: "2-digit",',
+                  '    hourCycle: "h23",',
+                  '  }).formatToParts(new Date());',
+                  '  const hour = Number(parts.find((part) => part.type === "hour")?.value || 0);',
+                  '  const minute = Number(parts.find((part) => part.type === "minute")?.value || 0);',
+                  '  return hour * 60 + minute;',
+                  '}',
+                  'function isHanaaOpenNow() {',
+                  '  const minutes = casablancaMinutesNow();',
+                  '  return minutes >= HANAA_OPEN_MINUTES || minutes < HANAA_CLOSE_MINUTES;',
+                  '}',
+                  '',
+              ]
+              helper = '\n'.join(helper_lines) + '\n'
               text = text.replace(anchor, helper + anchor, 1)
 
           guard_marker = 'Hanaa Food est fermé. Horaires: 12:00 – 03:00.'
@@ -66,16 +67,18 @@ function isHanaaOpenNow() {
               if place_idx == -1:
                   raise SystemExit('Safety check failed: order placement handler not found.')
               insert_at = place_idx + len(place_marker)
-              guard = '''
-    if (!isHanaaOpenNow()) {
-      window.alert("Hanaa Food est fermé. Horaires: 12:00 – 03:00.");
-      return;
-    }
-    if (branch && branch.isOpen === false) {
-      window.alert("Ce point de vente est fermé pour le moment.");
-      return;
-    }'''
-              text = text[:insert_at] + guard + text[insert_at:]
+              guard_lines = [
+                  '',
+                  '    if (!isHanaaOpenNow()) {',
+                  '      window.alert("Hanaa Food est fermé. Horaires: 12:00 – 03:00.");',
+                  '      return;',
+                  '    }',
+                  '    if (branch && branch.isOpen === false) {',
+                  '      window.alert("Ce point de vente est fermé pour le moment.");',
+                  '      return;',
+                  '    }',
+              ]
+              text = text[:insert_at] + '\n'.join(guard_lines) + text[insert_at:]
 
           banner_marker = 'Horaires : {HANAA_HOURS_LABEL}'
           if banner_marker not in text:
@@ -90,29 +93,31 @@ function isHanaaOpenNow() {
               if main_end == -1:
                   raise SystemExit('Safety check failed: Home main opening tag incomplete.')
               main_end += 1
-              banner = '''
-      <div
-        style={{
-          margin: "10px 16px 12px",
-          padding: "10px 14px",
-          borderRadius: 14,
-          background: isHanaaOpenNow() ? "#ecfdf3" : "#fff1f2",
-          border: isHanaaOpenNow() ? "1px solid #bbf7d0" : "1px solid #fecdd3",
-          color: "#18181b",
-          fontWeight: 800,
-          fontSize: 14,
-          textAlign: "center",
-        }}
-      >
-        {isHanaaOpenNow() ? "🟢 Ouvert" : "🔴 Fermé"} · Horaires : {HANAA_HOURS_LABEL}
-      </div>'''
-              text = text[:main_end] + banner + text[main_end:]
+              banner_lines = [
+                  '',
+                  '      <div',
+                  '        style={{',
+                  '          margin: "10px 16px 12px",',
+                  '          padding: "10px 14px",',
+                  '          borderRadius: 14,',
+                  '          background: isHanaaOpenNow() ? "#ecfdf3" : "#fff1f2",',
+                  '          border: isHanaaOpenNow() ? "1px solid #bbf7d0" : "1px solid #fecdd3",',
+                  '          color: "#18181b",',
+                  '          fontWeight: 800,',
+                  '          fontSize: 14,',
+                  '          textAlign: "center",',
+                  '        }}',
+                  '      >',
+                  '        {isHanaaOpenNow() ? "🟢 Ouvert" : "🔴 Fermé"} · Horaires : {HANAA_HOURS_LABEL}',
+                  '      </div>',
+              ]
+              text = text[:main_end] + '\n'.join(banner_lines) + text[main_end:]
 
-          if text == original:
-              print('Opening hours already configured.')
-          else:
+          if text != original:
               path.write_text(text, encoding='utf-8')
-              print('Configured Hanaa Food opening hours: 12:00–03:00 Casablanca time.')
+              print('Configured opening hours 12:00–03:00 Casablanca time.')
+          else:
+              print('Opening hours already configured.')
           PY
 
       - name: Verify production build
