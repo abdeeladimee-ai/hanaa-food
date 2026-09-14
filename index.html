@@ -2,9 +2,9 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/hanaa-logo.png?v=20260913" />
-    <link rel="shortcut icon" type="image/png" href="/hanaa-logo.png?v=20260913" />
-    <link rel="apple-touch-icon" href="/hanaa-logo.png?v=20260913" />
+    <link rel="icon" type="image/png" href="/hanaa-logo.png?v=20260914" />
+    <link rel="shortcut icon" type="image/png" href="/hanaa-logo.png?v=20260914" />
+    <link rel="apple-touch-icon" href="/hanaa-logo.png?v=20260914" />
     <meta name="theme-color" content="#D71920" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Hanaa Food — commande en ligne, livraison et à emporter." />
@@ -12,11 +12,57 @@
       section:has(img[alt="Logo Hanaa Food"]) {
         display: none !important;
       }
+
+      /* Evite de rendre les cartes produits hors écran tant qu'elles ne sont pas utiles. */
+      .product-card {
+        content-visibility: auto;
+        contain-intrinsic-size: 360px 460px;
+      }
     </style>
     <title>Hanaa Food</title>
   </head>
   <body>
     <div id="root"></div>
+
+    <script>
+      (() => {
+        const tuneImage = (img) => {
+          if (!(img instanceof HTMLImageElement)) return;
+
+          const src = img.currentSrc || img.getAttribute('src') || '';
+          const isBrand = src.includes('hanaa-logo');
+
+          if (isBrand) {
+            img.loading = 'eager';
+            img.decoding = 'async';
+            img.setAttribute('fetchpriority', 'high');
+            return;
+          }
+
+          if (!img.hasAttribute('loading')) img.loading = 'lazy';
+          if (!img.hasAttribute('decoding')) img.decoding = 'async';
+          if (!img.hasAttribute('fetchpriority')) img.setAttribute('fetchpriority', 'low');
+        };
+
+        const tuneTree = (node) => {
+          if (!(node instanceof Element)) return;
+          if (node.matches('img')) tuneImage(node);
+          node.querySelectorAll('img').forEach(tuneImage);
+        };
+
+        const observer = new MutationObserver((mutations) => {
+          for (const mutation of mutations) {
+            mutation.addedNodes.forEach(tuneTree);
+          }
+        });
+
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        window.addEventListener('DOMContentLoaded', () => {
+          document.querySelectorAll('img').forEach(tuneImage);
+        }, { once: true });
+      })();
+    </script>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
