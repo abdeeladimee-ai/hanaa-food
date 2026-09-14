@@ -1,0 +1,75 @@
+name: Set free delivery threshold to 500 DH
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/set-free-delivery-500.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-threshold:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update delivery threshold safely
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          files = [Path('src/App.jsx'), Path('src/pages/AdminDashboard.jsx')]
+          changed_any = False
+
+          for path in files:
+              text = path.read_text(encoding='utf-8')
+              new = text.replace('freeDeliveryThreshold: 150,', 'freeDeliveryThreshold: 500,')
+              new = new.replace('Livraison offerte dès 150 DH', 'Livraison offerte dès 500 DH')
+
+              if path.as_posix() == 'src/App.jsx':
+                  marker = '            ...(savedBranch.deliveryPricingSettings || {}),\n          },'
+                  replacement = '            ...(savedBranch.deliveryPricingSettings || {}),\n            freeDeliveryThreshold: 500,\n          },'
+                  if marker in new and '...(savedBranch.deliveryPricingSettings || {}),\n            freeDeliveryThreshold: 500,' not in new:
+                      new = new.replace(marker, replacement, 1)
+
+              if new != text:
+                  path.write_text(new, encoding='utf-8')
+                  print(f'Updated {path}')
+                  changed_any = True
+              else:
+                  print(f'No change needed in {path}')
+
+          app = Path('src/App.jsx').read_text(encoding='utf-8')
+          if 'freeDeliveryThreshold: 150,' in app:
+              raise SystemExit('Safety check failed: App.jsx still contains freeDeliveryThreshold: 150')
+          if 'freeDeliveryThreshold: 500,' not in app:
+              raise SystemExit('Safety check failed: App.jsx missing 500 DH threshold')
+
+          if not changed_any:
+              print('Threshold already set to 500 DH.')
+          PY
+
+      - name: Verify production build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit change
+        shell: bash
+        run: |
+          if git diff --quiet -- src/App.jsx src/pages/AdminDashboard.jsx; then
+            echo 'No source change needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.jsx src/pages/AdminDashboard.jsx
+          git commit -m 'Set free delivery threshold to 500 DH'
+          git push origin HEAD:main
