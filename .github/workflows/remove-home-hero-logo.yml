@@ -1,0 +1,74 @@
+name: Remove home hero logo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/remove-home-hero-logo.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  remove-logo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove only the large home logo block
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/App.jsx')
+          text = path.read_text(encoding='utf-8')
+          needle = 'alt="Logo Hanaa Food"'
+          menu_marker = '<section className="menu-section">'
+
+          idx = text.find(needle)
+          if idx == -1:
+              print('Large home logo already removed.')
+              raise SystemExit(0)
+
+          section_start = text.rfind('<section', 0, idx)
+          menu_idx = text.find(menu_marker, idx)
+          section_end = text.find('</section>', idx)
+
+          if section_start == -1 or menu_idx == -1 or section_end == -1 or section_end > menu_idx:
+              raise SystemExit('Could not safely isolate the home hero logo section.')
+
+          section_end += len('</section>')
+          removed = text[section_start:section_end]
+          if 'sur nos commandes' not in removed:
+              raise SystemExit('Safety check failed: rating text not found in target section.')
+
+          new_text = text[:section_start] + text[section_end:]
+          if needle in new_text or 'sur nos commandes' in new_text:
+              raise SystemExit('Safety check failed: hero logo/rating still present after edit.')
+
+          path.write_text(new_text, encoding='utf-8')
+          print('Removed only the large home logo + rating section.')
+          PY
+
+      - name: Verify production build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit change
+        shell: bash
+        run: |
+          if git diff --quiet -- src/App.jsx; then
+            echo 'No source change needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.jsx
+          git commit -m 'Remove large home logo block'
+          git push origin HEAD:main
