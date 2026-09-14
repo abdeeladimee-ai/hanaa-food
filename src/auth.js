@@ -59,6 +59,13 @@ const devAccounts = [
     role: "LIVREUR",
     name: "Livreur 1",
   },
+  {
+    id: "driver-youssef",
+    passwordHash: "55f2db1fdb76dccce775f0707d4fa841541bb99d1395f67eec95296ba63b1f0d",
+    role: "LIVREUR",
+    name: "Youssef",
+    active: true,
+  },
 ];
 
 const normalizePhone = (value) =>
