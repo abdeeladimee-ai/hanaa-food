@@ -1,0 +1,139 @@
+name: Fix QZ printing reliability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-qz-printing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-qz:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make kitchen QZ loading and retries reliable
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/kitchenAutoPrint.js')
+          text = path.read_text(encoding='utf-8')
+          original = text
+
+          text = text.replace(
+              'const attempted = new Set();\n',
+              ''
+          )
+
+          text = text.replace(
+              'const PRINTED_PREFIX = "hanaa-kitchen-printed:";\n',
+              'const PRINTED_PREFIX = "hanaa-kitchen-printed:";\nconst QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";\n'
+          )
+
+          old_get_qz = '''async function getQz() {
+            const qz = window.qz;
+            if (!qz) throw new Error("QZ Tray JavaScript ma tchargach.");
+            if (qz.websocket.isActive()) return qz;
+
+            if (!connectPromise) {
+              connectPromise = qz.websocket
+                .connect({ retries: 2, delay: 1 })
+                .finally(() => {
+                  connectPromise = null;
+                });
+            }
+
+            await connectPromise;
+            return qz;
+          }'''
+
+          new_get_qz = '''async function waitForQzScript() {
+            if (window.qz) return window.qz;
+
+            let script = document.querySelector(`script[src="${QZ_SCRIPT_URL}"]`);
+            if (!script) {
+              script = document.createElement("script");
+              script.src = QZ_SCRIPT_URL;
+              script.async = true;
+              document.head.appendChild(script);
+            }
+
+            const startedAt = Date.now();
+            while (!window.qz && Date.now() - startedAt < 10000) {
+              await new Promise((resolve) => setTimeout(resolve, 250));
+            }
+
+            if (!window.qz) throw new Error("QZ Tray JavaScript ma tchargach.");
+            return window.qz;
+          }
+
+          async function getQz() {
+            const qz = await waitForQzScript();
+            if (qz.websocket.isActive()) return qz;
+
+            if (!connectPromise) {
+              connectPromise = qz.websocket
+                .connect({ retries: 5, delay: 1 })
+                .finally(() => {
+                  connectPromise = null;
+                });
+            }
+
+            await connectPromise;
+            return qz;
+          }'''
+
+          if old_get_qz not in text:
+              raise SystemExit('Expected getQz block not found; refusing unsafe patch.')
+          text = text.replace(old_get_qz, new_get_qz)
+
+          text = text.replace(
+              'if (!orderId || inFlight.has(orderId) || attempted.has(orderId)) return;',
+              'if (!orderId || inFlight.has(orderId)) return;'
+          )
+          text = text.replace('  attempted.add(orderId);\n', '')
+
+          old_tail = '''  setTimeout(scheduleScan, 500);
+          }'''
+          new_tail = '''  setTimeout(scheduleScan, 500);
+            setInterval(scheduleScan, 3000);
+          }'''
+          if old_tail not in text:
+              raise SystemExit('Expected kitchen scan tail not found; refusing unsafe patch.')
+          text = text.replace(old_tail, new_tail)
+
+          if text == original:
+              raise SystemExit('No QZ changes were made.')
+
+          path.write_text(text, encoding='utf-8')
+          print('QZ kitchen printing reliability patch applied.')
+          PY
+
+      - name: Verify production build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit QZ fix
+        shell: bash
+        run: |
+          if git diff --quiet -- src/kitchenAutoPrint.js; then
+            echo 'No source change needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '4189828+github-actions[bot]@users.noreply.github.com'
+          git add src/kitchenAutoPrint.js
+          git commit -m 'Fix QZ kitchen printing retries'
+          git push origin HEAD:main
