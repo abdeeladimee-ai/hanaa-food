@@ -59,13 +59,10 @@ jobs:
 
           guard_marker = 'Hanaa Food est fermé. Horaires: 12:00 – 03:00.'
           if guard_marker not in text:
-              checkout_start = text.find('function Checkout({')
-              if checkout_start == -1:
-                  raise SystemExit('Safety check failed: Checkout component not found.')
               place_marker = 'const place = async (details) => {'
-              place_idx = text.find(place_marker, checkout_start)
-              if place_idx == -1:
-                  raise SystemExit('Safety check failed: order placement handler not found.')
+              if text.count(place_marker) != 1:
+                  raise SystemExit(f'Safety check failed: expected one order placement handler, found {text.count(place_marker)}.')
+              place_idx = text.find(place_marker)
               insert_at = place_idx + len(place_marker)
               guard_lines = [
                   '',
