@@ -91,3 +91,5 @@ jobs:
           git add public/products public/hanaa-logo.png
           git commit -m 'Optimize menu images for faster loading'
           git push origin HEAD:main
+
+# Version 2: run after workflow exists on main.
