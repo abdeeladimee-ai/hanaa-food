@@ -62,7 +62,6 @@ const defaultBranches = [
       pricePerKm: 2,
       minimumFee: 10,
       maximumDistanceKm: 10,
-      freeDeliveryThreshold: 150,
     },
   },
   {
@@ -88,7 +87,6 @@ const defaultBranches = [
       pricePerKm: 2,
       minimumFee: 10,
       maximumDistanceKm: 10,
-      freeDeliveryThreshold: 150,
     },
   },
   {
@@ -114,7 +112,6 @@ const defaultBranches = [
       pricePerKm: 2,
       minimumFee: 10,
       maximumDistanceKm: 10,
-      freeDeliveryThreshold: 150,
     },
   },
 ];
@@ -656,8 +653,6 @@ const phoneIsValid = (value) =>
   /^(0[67]\d{8}|\+212[67]\d{8})$/.test(value.replace(/[ .-]/g, ""));
 function feeFor(branch, distance, subtotal) {
   if (!branch || distance === null) return 0;
-  if (subtotal >= branch.deliveryPricingSettings.freeDeliveryThreshold)
-    return 0;
   const zone = branch.deliveryZones?.find((item) => distance <= item.maxKm);
   return zone ? zone.fee : 0;
 }
@@ -1256,7 +1251,7 @@ function Home({
             </div>
           )}
           <div className="hero-note">
-            ✓ Livraison offerte dès 150 DH　✓ Paiement à la livraison
+            ✓ Frais de livraison selon la distance　✓ Paiement à la livraison
           </div>
         </div>
         <div
