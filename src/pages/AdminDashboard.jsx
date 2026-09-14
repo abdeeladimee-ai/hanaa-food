@@ -27,7 +27,7 @@ const defaultBranches = [
       pricePerKm: 2,
       minimumFee: 10,
       maximumDistanceKm: 10,
-      freeDeliveryThreshold: 150,
+      freeDeliveryThreshold: 500,
     },
   },
   {
@@ -47,7 +47,7 @@ const defaultBranches = [
       pricePerKm: 2,
       minimumFee: 10,
       maximumDistanceKm: 10,
-      freeDeliveryThreshold: 150,
+      freeDeliveryThreshold: 500,
     },
   },
   {
@@ -67,7 +67,7 @@ const defaultBranches = [
       pricePerKm: 2,
       minimumFee: 10,
       maximumDistanceKm: 10,
-      freeDeliveryThreshold: 150,
+      freeDeliveryThreshold: 500,
     },
   },
 ];
