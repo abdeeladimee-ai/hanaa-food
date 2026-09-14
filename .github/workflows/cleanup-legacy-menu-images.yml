@@ -1,0 +1,158 @@
+name: Cleanup legacy menu images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cleanup-legacy-menu-images.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove only unreferenced legacy menu images
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          candidates = [
+            'public/products/burgers-big-mac.jpg',
+            'public/products/burgers-boeuf-rosti.jpg',
+            'public/products/burgers-cheese-burger.jpg',
+            'public/products/burgers-cheese-omelette.jpg',
+            'public/products/burgers-chicken-rosti.jpg',
+            'public/products/burgers-chicken.jpg',
+            'public/products/burgers-crispy-chicken.jpg',
+            'public/products/burgers-double-chicken.jpg',
+            'public/products/burgers-fish.jpg',
+            'public/products/burgers-le-king.jpg',
+            'public/products/burgers-mini-cheese.jpg',
+            'public/products/burgers-texas.jpg',
+            'public/products/dessert-cheesecake.jpg',
+            'public/products/dessert-panna-cotta.jpg',
+            'public/products/dessert-tiramisu.jpg',
+            'public/products/desserts-cheese-cake.jpg',
+            'public/products/desserts-panna-cotta.jpg',
+            'public/products/desserts-tiramisu.jpg',
+            'public/products/grillades-brochettes-mixte.jpg',
+            'public/products/grillades-brochettes-poulet.jpg',
+            'public/products/grillades-brochettes-viande-hachee.jpg',
+            'public/products/jus-avocat-fitness.jpg',
+            'public/products/jus-fruits-colores.jpg',
+            'public/products/jus-hanaa-food.jpg',
+            'public/products/jus-verres-colores.jpg',
+            'public/products/menus-menu-crunchy.jpg',
+            'public/products/menus-menu-duo.jpg',
+            'public/products/menus-menu-quatro.jpg',
+            'public/products/menus-menu-sekhawa.jpg',
+            'public/products/menus-menu-solo.jpg',
+            'public/products/pasticcio-menu.jpg',
+            'public/products/plats-chicken-eco.jpg',
+            'public/products/plats-chicken-hanaa-food.jpg',
+            'public/products/plats-chicken-tandoori.jpg',
+            'public/products/plats-cordon-bleu.jpg',
+            'public/products/plats-emince-de-poulet.jpg',
+            'public/products/plats-escalope-de-poulet-milanaise.jpg',
+            'public/products/plats-plat-fitness.jpg',
+            'public/products/plats-poulet-parmigiana.jpg',
+            'public/products/plats/chicken-eco.png',
+            'public/products/plats/chicken-hanaa-food.png',
+            'public/products/plats/chicken-tandoori.png',
+            'public/products/plats/cordon-bleu.png',
+            'public/products/plats/emince-de-poulet.png',
+            'public/products/plats/escalope-milanaise.png',
+            'public/products/plats/plat-fitnesse.png',
+            'public/products/plats/poulet-parmigiana.png',
+            'public/products/salades-cesar.jpg',
+            'public/products/salades-hanaa-food.jpg',
+            'public/products/salades-marocaine.jpg',
+            'public/products/salades-mexicaine.jpg',
+            'public/products/salades-nicoise.jpg',
+            'public/products/sandwichs-classiques-mixte.jpg',
+            'public/products/sandwichs-classiques-nuggets.jpg',
+            'public/products/sandwichs-classiques-poulet.jpg',
+            'public/products/sandwichs-classiques-thon.jpg',
+            'public/products/sandwichs-classiques-viande-hachee.jpg',
+            'public/products/tacos-classiques-cordon-bleu.jpg',
+            'public/products/tacos-classiques-geant.jpg',
+            'public/products/tacos-classiques-hanaa-food.jpg',
+            'public/products/tacos-classiques-mixte.jpg',
+            'public/products/tacos-classiques-nuggets.jpg',
+            'public/products/tacos-classiques-poulet.jpg',
+            'public/products/tacos-classiques-viande-hachee.jpg',
+            'public/products/wraps-chicken-louisiane.jpg',
+            'public/products/wraps-chicken-onions.jpg',
+            'public/products/wraps-diablo.jpg',
+            'public/products/wraps-el-dorado.jpg',
+            'public/products/wraps-sovereign.jpg',
+          ]
+
+          text_exts = {'.js', '.jsx', '.ts', '.tsx', '.css', '.html', '.json', '.md'}
+          sources = []
+          for root in [Path('src'), Path('public')]:
+            if not root.exists():
+              continue
+            for p in root.rglob('*'):
+              if not p.is_file() or p.suffix.lower() not in text_exts:
+                continue
+              if p.as_posix() == '.github/workflows/cleanup-legacy-menu-images.yml':
+                continue
+              try:
+                sources.append((p, p.read_text(encoding='utf-8', errors='ignore')))
+              except Exception:
+                pass
+          if Path('index.html').exists():
+            sources.append((Path('index.html'), Path('index.html').read_text(encoding='utf-8', errors='ignore')))
+
+          removed = []
+          kept = []
+          for raw in candidates:
+            p = Path(raw)
+            if not p.exists():
+              continue
+            public_url = '/' + p.relative_to('public').as_posix()
+            basename = p.name
+            refs = []
+            for src, text in sources:
+              if public_url in text or raw in text or basename in text:
+                refs.append(src.as_posix())
+            if refs:
+              kept.append((raw, refs))
+              print(f'KEEP referenced: {raw} -> {refs}')
+              continue
+            p.unlink()
+            removed.append(raw)
+            print(f'REMOVE unused: {raw}')
+
+          print(f'Removed {len(removed)} legacy images; kept {len(kept)} referenced images.')
+          if not removed:
+            print('Nothing to clean.')
+          PY
+
+      - name: Verify production build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          if git diff --quiet -- public/products; then
+            echo 'No legacy menu images needed removal.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -u public/products
+          git commit -m 'Remove unused legacy menu images'
+          git push origin HEAD:main
