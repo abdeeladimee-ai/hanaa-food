@@ -1,0 +1,15 @@
+/* Keep customer product image slots visible even when category-specific rules use height: 100%. */
+.product-card .product-image {
+  height: 180px;
+}
+
+.product-card .product-image img {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+@media (max-width: 850px) {
+  .product-card .product-image {
+    height: 140px;
+  }
+}
