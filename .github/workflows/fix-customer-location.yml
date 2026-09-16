@@ -1,0 +1,77 @@
+name: Fix customer location
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-customer-location.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-location:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wire customer geolocation correctly
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/App.jsx')
+          text = path.read_text(encoding='utf-8')
+
+          old_pill = '<button className="address-pill" onClick={() => setView("home")}>'
+          new_pill = '''<button
+          className="address-pill"
+          onClick={() => {
+            setView("home");
+            if (mode === "delivery") useCurrentLocation();
+          }}
+        >'''
+          if text.count(old_pill) != 1:
+              raise SystemExit(f'Safety stop: expected one address pill, found {text.count(old_pill)}')
+          text = text.replace(old_pill, new_pill, 1)
+
+          old_picker = '''            mode={mode}
+            address={address}
+            setAddress={setAddress}
+            customerLocation={customerLocation}'''
+          new_picker = '''            mode={mode}
+            address={address}
+            setAddress={setAddress}
+            onUseCurrentLocation={useCurrentLocation}
+            addressLoading={addressLoading}
+            customerLocation={customerLocation}'''
+          if text.count(old_picker) != 1:
+              raise SystemExit(f'Safety stop: expected one BranchPicker prop block, found {text.count(old_picker)}')
+          text = text.replace(old_picker, new_picker, 1)
+
+          path.write_text(text, encoding='utf-8')
+          print('Customer geolocation wiring fixed.')
+          PY
+
+      - name: Verify build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.jsx
+          if git diff --cached --quiet; then
+            echo 'No change needed.'
+            exit 0
+          fi
+          git commit -m 'Fix customer geolocation controls'
+          git push origin HEAD:main
