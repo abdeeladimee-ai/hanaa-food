@@ -972,19 +972,7 @@ function App() {
           style={{ display: "flex", alignItems: "center", padding: 0 }}
           aria-label="Hanaa Food"
         >
-          <img
-            src="/hanaa-logo.png"
-            alt="Hanaa Food"
-            style={{
-              width: 64,
-              height: 64,
-              objectFit: "contain",
-              display: "block",
-              borderRadius: 12,
-              background: "#fff",
-              flexShrink: 0,
-            }}
-          />
+          
         </button>
         <button className="address-pill" onClick={() => setView("home")}>
           <span>⌖</span>
@@ -1138,11 +1126,7 @@ function App() {
       )}
       <footer>
         <strong style={{ display: "flex", alignItems: "center" }}>
-          <img
-            src="/hanaa-logo.png"
-            alt="Hanaa Food"
-            style={{ width: 76, height: 76, objectFit: "contain" }}
-          />
+          
         </strong>
         <span>Delicious Food · Livraison à domicile : 05 21 43 11 03</span>
         <span>@hanaafood_california · Hanaa Food California · hanaa food.ma</span>
@@ -2004,11 +1988,7 @@ function Account({ onHome, onOrders, onFavorites, onProfile }) {
       </button>
       <div className="profile-head">
         <div className="profile-avatar" style={{ overflow: "hidden", background: "#fff" }}>
-          <img
-            src="/hanaa-logo.png"
-            alt="Hanaa Food"
-            style={{ width: "100%", height: "100%", objectFit: "contain" }}
-          />
+          
         </div>
         <div>
           <span className="eyebrow">MON ESPACE</span>
