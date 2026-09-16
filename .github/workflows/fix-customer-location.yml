@@ -29,27 +29,13 @@ jobs:
           text = path.read_text(encoding='utf-8')
 
           old_pill = '<button className="address-pill" onClick={() => setView("home")}>'
-          new_pill = '''<button
-          className="address-pill"
-          onClick={() => {
-            setView("home");
-            if (mode === "delivery") useCurrentLocation();
-          }}
-        >'''
+          new_pill = '<button\n          className="address-pill"\n          onClick={() => {\n            setView("home");\n            if (mode === "delivery") useCurrentLocation();\n          }}\n        >'
           if text.count(old_pill) != 1:
               raise SystemExit(f'Safety stop: expected one address pill, found {text.count(old_pill)}')
           text = text.replace(old_pill, new_pill, 1)
 
-          old_picker = '''            mode={mode}
-            address={address}
-            setAddress={setAddress}
-            customerLocation={customerLocation}'''
-          new_picker = '''            mode={mode}
-            address={address}
-            setAddress={setAddress}
-            onUseCurrentLocation={useCurrentLocation}
-            addressLoading={addressLoading}
-            customerLocation={customerLocation}'''
+          old_picker = '            mode={mode}\n            address={address}\n            setAddress={setAddress}\n            customerLocation={customerLocation}'
+          new_picker = '            mode={mode}\n            address={address}\n            setAddress={setAddress}\n            onUseCurrentLocation={useCurrentLocation}\n            addressLoading={addressLoading}\n            customerLocation={customerLocation}'
           if text.count(old_picker) != 1:
               raise SystemExit(f'Safety stop: expected one BranchPicker prop block, found {text.count(old_picker)}')
           text = text.replace(old_picker, new_picker, 1)
