@@ -1,0 +1,82 @@
+name: Reorder menu categories
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/reorder-menu-categories.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reorder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Put sandwiches and special tacos first
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/App.jsx')
+          text = path.read_text(encoding='utf-8')
+
+          start = text.find('const categories = [')
+          end_marker = '].map(([label, id]) => ({ label, id }));'
+          end = text.find(end_marker, start)
+          if start == -1 or end == -1:
+              raise SystemExit('Categories block not found.')
+          end += len(end_marker)
+
+          new_block = '''const categories = [
+  ["Sandwichs Classiques", "sandwichs-classiques"],
+  ["Sandwichs Spéciaux", "sandwichs-speciaux"],
+  ["Tacos Spéciaux", "tacos-speciaux"],
+  ["Tacos Classiques", "tacos-classiques"],
+  ["Mini Tacos Étudiants", "mini-tacos"],
+  ["Salades", "salades"],
+  ["Pâtes", "pates"],
+  ["Pizzas", "pizzas"],
+  ["Pasticcios", "pasticcios"],
+  ["Tapas", "tapas"],
+  ["Wraps", "wraps"],
+  ["Grillades", "grillades"],
+  ["Plats", "plats"],
+  ["Burgers", "burgers"],
+  ["Bowls", "bowls"],
+  ["Jus", "jus"],
+  ["Supplément Jus", "supplement-jus"],
+  ["Desserts", "desserts"],
+  ["Suppléments", "supplements"],
+  ["Boissons", "boissons"],
+].map(([label, id]) => ({ label, id }));'''
+
+          new_text = text[:start] + new_block + text[end:]
+          path.write_text(new_text, encoding='utf-8')
+          print('Categories reordered.')
+          PY
+
+      - name: Verify build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.jsx
+          if git diff --cached --quiet; then
+            echo 'No change needed.'
+            exit 0
+          fi
+          git commit -m 'Put sandwiches and special tacos first'
+          git push origin HEAD:main
