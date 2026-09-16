@@ -1,0 +1,91 @@
+name: Set final menu order
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/set-final-menu-order.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  set-order:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply requested menu order
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/App.jsx')
+          text = path.read_text(encoding='utf-8')
+
+          start = text.find('const categories = [')
+          end_marker = '].map(([label, id]) => ({ label, id }));'
+          end = text.find(end_marker, start)
+          if start == -1 or end == -1:
+              raise SystemExit('Categories block not found.')
+          end += len(end_marker)
+
+          lines = [
+              'const categories = [',
+              '  ["Sandwichs Spéciaux", "sandwichs-speciaux"],',
+              '  ["Tacos Spéciaux", "tacos-speciaux"],',
+              '  ["Tacos Classiques", "tacos-classiques"],',
+              '  ["Salades", "salades"],',
+              '  ["Pâtes", "pates"],',
+              '  ["Pizzas", "pizzas"],',
+              '  ["Pasticcios", "pasticcios"],',
+              '  ["Tapas", "tapas"],',
+              '  ["Wraps", "wraps"],',
+              '  ["Grillades", "grillades"],',
+              '  ["Plats", "plats"],',
+              '  ["Burgers", "burgers"],',
+              '  ["Sandwichs Classiques", "sandwichs-classiques"],',
+              '  ["Mini Tacos Étudiants", "mini-tacos"],',
+              '  ["Bowls", "bowls"],',
+              '  ["Jus", "jus"],',
+              '  ["Supplément Jus", "supplement-jus"],',
+              '  ["Desserts", "desserts"],',
+              '  ["Suppléments", "supplements"],',
+              '  ["Boissons", "boissons"],',
+              '].map(([label, id]) => ({ label, id }));',
+          ]
+          new_block = '\n'.join(lines)
+          text = text[:start] + new_block + text[end:]
+
+          old_default = 'const [category, setCategory] = useState("sandwichs-classiques");'
+          new_default = 'const [category, setCategory] = useState("sandwichs-speciaux");'
+          if old_default not in text and new_default not in text:
+              raise SystemExit('Default category line not found.')
+          text = text.replace(old_default, new_default, 1)
+
+          path.write_text(text, encoding='utf-8')
+          print('Final menu order applied.')
+          PY
+
+      - name: Verify build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.jsx
+          if git diff --cached --quiet; then
+            echo 'No change needed.'
+            exit 0
+          fi
+          git commit -m 'Set requested menu category order'
+          git push origin HEAD:main
