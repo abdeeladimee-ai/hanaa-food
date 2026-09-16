@@ -949,6 +949,13 @@ function App() {
       setOrder(savedOrder);
     } catch (error) {
       console.error("Supabase order create failed:", error);
+      if (
+        error?.code === "CUSTOMER_ORDERING_CLOSED" ||
+        error?.message === "CUSTOMER_ORDERING_CLOSED"
+      ) {
+        window.alert("Commandes fermées de 03:00 à 12:00. Réouverture à 12:00.");
+        return;
+      }
       window.alert("Commande ma tsajlatch. T2akked mn Supabase w internet.");
       return;
     }

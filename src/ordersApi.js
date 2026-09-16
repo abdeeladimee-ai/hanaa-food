@@ -29,6 +29,37 @@ function hasStaffSession() {
   }
 }
 
+const CUSTOMER_ORDER_TIME_ZONE = "Africa/Casablanca";
+const CUSTOMER_ORDER_OPEN_HOUR = 12;
+const CUSTOMER_ORDER_CLOSE_HOUR = 3;
+
+function getCustomerOrderHour(now = new Date()) {
+  const part = new Intl.DateTimeFormat("en-GB", {
+    timeZone: CUSTOMER_ORDER_TIME_ZONE,
+    hour: "2-digit",
+    hourCycle: "h23",
+  })
+    .formatToParts(now)
+    .find((item) => item.type === "hour");
+
+  return Number(part?.value);
+}
+
+function assertCustomerOrderingOpen() {
+  if (hasStaffSession()) return;
+
+  const hour = getCustomerOrderHour();
+  if (
+    Number.isFinite(hour) &&
+    hour >= CUSTOMER_ORDER_CLOSE_HOUR &&
+    hour < CUSTOMER_ORDER_OPEN_HOUR
+  ) {
+    const error = new Error("CUSTOMER_ORDERING_CLOSED");
+    error.code = "CUSTOMER_ORDERING_CLOSED";
+    throw error;
+  }
+}
+
 function readClientOrderIds() {
   if (typeof window === "undefined") return [];
 
@@ -233,6 +264,7 @@ export async function getOrder(orderId) {
 }
 
 export async function createOrder(order) {
+  assertCustomerOrderingOpen();
   const supabase = requireSupabase();
 
   const { data, error } = await supabase
