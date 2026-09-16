@@ -1,6 +1,7 @@
 (() => {
   const BANNER_ID = "hanaa-ordering-closed-banner";
   const TIME_ZONE = "Africa/Casablanca";
+  const TEST_CLOSED = new URLSearchParams(window.location.search).get("testClosed") === "1";
 
   const getCasablancaHour = () => {
     const hourPart = new Intl.DateTimeFormat("en-GB", {
@@ -15,6 +16,7 @@
   };
 
   const isClosed = () => {
+    if (TEST_CLOSED) return true;
     const hour = getCasablancaHour();
     return Number.isFinite(hour) && hour >= 3 && hour < 12;
   };
@@ -52,8 +54,9 @@
         "text-align:center",
         "box-sizing:border-box",
       ].join(";");
-      banner.textContent =
-        "Commandes fermées de 03:00 à 12:00 · Réouverture automatique à 12:00";
+      banner.textContent = TEST_CLOSED
+        ? "TEST · Commandes fermées de 03:00 à 12:00 · Réouverture automatique à 12:00"
+        : "Commandes fermées de 03:00 à 12:00 · Réouverture automatique à 12:00";
       navbar.insertAdjacentElement("afterend", banner);
     }
   };
