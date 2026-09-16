@@ -17,6 +17,11 @@ const routeViews = { "/login": "login", "/admin": "admin-dashboard", "/admin/com
 const photo = (id) =>
   `https://images.unsplash.com/${id}?auto=format&fit=crop&w=900&q=82`;
 const categories = [
+  ["Sandwichs Classiques", "sandwichs-classiques"],
+  ["Sandwichs Spéciaux", "sandwichs-speciaux"],
+  ["Tacos Spéciaux", "tacos-speciaux"],
+  ["Tacos Classiques", "tacos-classiques"],
+  ["Mini Tacos Étudiants", "mini-tacos"],
   ["Salades", "salades"],
   ["Pâtes", "pates"],
   ["Pizzas", "pizzas"],
@@ -26,17 +31,13 @@ const categories = [
   ["Grillades", "grillades"],
   ["Plats", "plats"],
   ["Burgers", "burgers"],
-  ["Sandwichs Classiques", "sandwichs-classiques"],
-  ["Tacos Classiques", "tacos-classiques"],
-  ["Mini Tacos Étudiants", "mini-tacos"],
-  ["Tacos Spéciaux", "tacos-speciaux"],
-  ["Sandwichs Spéciaux", "sandwichs-speciaux"],
   ["Bowls", "bowls"],
   ["Jus", "jus"],
   ["Supplément Jus", "supplement-jus"],
   ["Desserts", "desserts"],
   ["Suppléments", "supplements"],
-  ["Boissons", "boissons"],].map(([label, id]) => ({ label, id }));
+  ["Boissons", "boissons"],
+].map(([label, id]) => ({ label, id }));
 
 const defaultBranches = [
   {
