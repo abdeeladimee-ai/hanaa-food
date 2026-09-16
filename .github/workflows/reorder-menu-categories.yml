@@ -27,7 +27,6 @@ jobs:
 
           path = Path('src/App.jsx')
           text = path.read_text(encoding='utf-8')
-
           start = text.find('const categories = [')
           end_marker = '].map(([label, id]) => ({ label, id }));'
           end = text.find(end_marker, start)
@@ -35,31 +34,32 @@ jobs:
               raise SystemExit('Categories block not found.')
           end += len(end_marker)
 
-          new_block = '''const categories = [
-  ["Sandwichs Classiques", "sandwichs-classiques"],
-  ["Sandwichs Spéciaux", "sandwichs-speciaux"],
-  ["Tacos Spéciaux", "tacos-speciaux"],
-  ["Tacos Classiques", "tacos-classiques"],
-  ["Mini Tacos Étudiants", "mini-tacos"],
-  ["Salades", "salades"],
-  ["Pâtes", "pates"],
-  ["Pizzas", "pizzas"],
-  ["Pasticcios", "pasticcios"],
-  ["Tapas", "tapas"],
-  ["Wraps", "wraps"],
-  ["Grillades", "grillades"],
-  ["Plats", "plats"],
-  ["Burgers", "burgers"],
-  ["Bowls", "bowls"],
-  ["Jus", "jus"],
-  ["Supplément Jus", "supplement-jus"],
-  ["Desserts", "desserts"],
-  ["Suppléments", "supplements"],
-  ["Boissons", "boissons"],
-].map(([label, id]) => ({ label, id }));'''
-
-          new_text = text[:start] + new_block + text[end:]
-          path.write_text(new_text, encoding='utf-8')
+          lines = [
+              'const categories = [',
+              '  ["Sandwichs Classiques", "sandwichs-classiques"],',
+              '  ["Sandwichs Spéciaux", "sandwichs-speciaux"],',
+              '  ["Tacos Spéciaux", "tacos-speciaux"],',
+              '  ["Tacos Classiques", "tacos-classiques"],',
+              '  ["Mini Tacos Étudiants", "mini-tacos"],',
+              '  ["Salades", "salades"],',
+              '  ["Pâtes", "pates"],',
+              '  ["Pizzas", "pizzas"],',
+              '  ["Pasticcios", "pasticcios"],',
+              '  ["Tapas", "tapas"],',
+              '  ["Wraps", "wraps"],',
+              '  ["Grillades", "grillades"],',
+              '  ["Plats", "plats"],',
+              '  ["Burgers", "burgers"],',
+              '  ["Bowls", "bowls"],',
+              '  ["Jus", "jus"],',
+              '  ["Supplément Jus", "supplement-jus"],',
+              '  ["Desserts", "desserts"],',
+              '  ["Suppléments", "supplements"],',
+              '  ["Boissons", "boissons"],',
+              '].map(([label, id]) => ({ label, id }));',
+          ]
+          new_block = '\n'.join(lines)
+          path.write_text(text[:start] + new_block + text[end:], encoding='utf-8')
           print('Categories reordered.')
           PY
 
