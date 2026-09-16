@@ -1,0 +1,61 @@
+name: Remove all client logo images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/remove-all-client-logo-images.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  remove-client-logos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove every Hanaa logo image from client App
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('src/App.jsx')
+          text = path.read_text(encoding='utf-8')
+
+          pattern = r'<img\s+[\s\S]*?src="/hanaa-logo\.png"[\s\S]*?/>'
+          new_text, count = re.subn(pattern, '', text)
+
+          if count != 3:
+              raise SystemExit(f'Safety stop: expected 3 client logo images, found {count}.')
+
+          if '/hanaa-logo.png' in new_text:
+              raise SystemExit('Safety stop: a client logo reference still remains in App.jsx.')
+
+          path.write_text(new_text, encoding='utf-8')
+          print(f'Removed {count} client logo images from App.jsx.')
+          PY
+
+      - name: Verify production build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.jsx
+          if git diff --cached --quiet; then
+            echo 'No change needed.'
+            exit 0
+          fi
+          git commit -m 'Remove remaining client logos'
+          git push origin HEAD:main
