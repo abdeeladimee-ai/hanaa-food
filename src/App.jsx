@@ -670,7 +670,7 @@ function App() {
   const navigate = (path, replace = false) => { const safePath = authorizedPath(path, session); window.history[replace ? "replaceState" : "pushState"]({}, "", safePath); setView(routeViews[safePath] || "home"); };
   useEffect(() => { const syncPath = () => navigate(window.location.pathname, true); window.addEventListener("popstate", syncPath); return () => window.removeEventListener("popstate", syncPath); });
   useEffect(() => { const safePath = authorizedPath(window.location.pathname, session); if (safePath !== window.location.pathname) { window.history.replaceState({}, "", safePath); queueMicrotask(() => setView(routeViews[safePath] || "home")); } }, [session]);
-  const [category, setCategory] = useState("salades");
+  const [category, setCategory] = useState("sandwichs-classiques");
   const [query, setQuery] = useState("");
   const [address, setAddress] = useState("");
   const [customerLocation, setCustomerLocation] = useState(null);
