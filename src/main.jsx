@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import './customerLocationGate.js'
 import App from './App.jsx'
+import './productImageFix.css'
+import './productImageFix.js'
 
 if (
   typeof window !== 'undefined' &&
