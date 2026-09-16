@@ -1,0 +1,58 @@
+name: Set default sandwich category
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/set-default-sandwich.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  set-default:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Sandwichs Classiques as default category
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/App.jsx')
+          text = path.read_text(encoding='utf-8')
+          old = 'const [category, setCategory] = useState("salades");'
+          new = 'const [category, setCategory] = useState("sandwichs-classiques");'
+          if new in text:
+              print('Default category already set.')
+          elif old in text:
+              text = text.replace(old, new, 1)
+              path.write_text(text, encoding='utf-8')
+              print('Default category changed to Sandwichs Classiques.')
+          else:
+              raise SystemExit('Default category line not found.')
+          PY
+
+      - name: Verify build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.jsx
+          if git diff --cached --quiet; then
+            echo 'No change needed.'
+            exit 0
+          fi
+          git commit -m 'Show sandwiches by default'
+          git push origin HEAD:main
