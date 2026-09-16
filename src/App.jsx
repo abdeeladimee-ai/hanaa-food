@@ -987,7 +987,13 @@ function App() {
             }}
           />
         </button>
-        <button className="address-pill" onClick={() => setView("home")}>
+        <button
+          className="address-pill"
+          onClick={() => {
+            setView("home");
+            if (mode === "delivery") useCurrentLocation();
+          }}
+        >
           <span>⌖</span>
           <small>
             {mode === "pickup" ? "Retrait" : "Livrer à"}
@@ -1046,6 +1052,8 @@ function App() {
             mode={mode}
             address={address}
             setAddress={setAddress}
+            onUseCurrentLocation={useCurrentLocation}
+            addressLoading={addressLoading}
             customerLocation={customerLocation}
             setCustomerLocation={setCustomerLocation}
             routes={deliveryRoutes}
