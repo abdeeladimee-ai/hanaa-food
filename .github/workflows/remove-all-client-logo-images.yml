@@ -29,8 +29,8 @@ jobs:
           path = Path('src/App.jsx')
           text = path.read_text(encoding='utf-8')
 
-          pattern = r'<img\s+[\s\S]*?src="/hanaa-logo\.png"[\s\S]*?/>'
-          new_text, count = re.subn(pattern, '', text)
+          pattern = r'<img[^>]*src="/hanaa-logo\.png"[^>]*/>'
+          new_text, count = re.subn(pattern, '', text, flags=re.S)
 
           if count != 3:
               raise SystemExit(f'Safety stop: expected 3 client logo images, found {count}.')
