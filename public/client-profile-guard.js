@@ -106,7 +106,6 @@
 
   const goToProfile = () => {
     sessionStorage.setItem(PENDING_ORDER_KEY, "1");
-    window.alert("Qbel ma tkemmel commande, 3ammer Nom w Téléphone f Mon profil.");
 
     const accountButton = findButton((label) => label === "Mon compte") ||
       findButton((label) => label === "Profil");
@@ -132,31 +131,6 @@
       const commander = findButton((label) => /^Commander\b/.test(label));
       if (commander && !commander.disabled) commander.click();
     }, 120);
-  };
-
-  const addRequiredNote = () => {
-    const profileTitle = [...document.querySelectorAll("h1")].find(
-      (node) => cleanText(node.textContent) === "Mon profil",
-    );
-    if (!profileTitle || document.getElementById("hanaa-profile-required-note")) return;
-
-    const container = profileTitle.parentElement;
-    if (!container) return;
-
-    const note = document.createElement("div");
-    note.id = "hanaa-profile-required-note";
-    note.style.cssText = [
-      "margin-top:12px",
-      "padding:12px 14px",
-      "border-radius:12px",
-      "background:#fff1f1",
-      "border:1px solid #f3c5c7",
-      "color:#8f151b",
-      "font-weight:800",
-      "line-height:1.4",
-    ].join(";");
-    note.textContent = "Obligatoire pour commander · Remplis ton nom et ton téléphone une seule fois.";
-    container.appendChild(note);
   };
 
   document.addEventListener(
@@ -213,10 +187,6 @@
     true,
   );
 
-  const observer = new MutationObserver(addRequiredNote);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-
   migrateExistingProfile();
-  addRequiredNote();
   window.setInterval(mergeCurrentOrderIdsIntoProfile, 2000);
 })();
