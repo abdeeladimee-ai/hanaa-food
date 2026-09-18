@@ -322,3 +322,5 @@ function installManualPrintButtons() {
 if (typeof window !== "undefined") {
   installManualPrintButtons();
 }
+
+// QZ local loader deployment trigger
