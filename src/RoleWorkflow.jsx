@@ -61,7 +61,7 @@ const playNotificationTone = async (role) => {
 
 
 // HANAA_QZ_INTEGRATION_START
-const QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
+const QZ_SCRIPT_URL = "/qz-tray.js";
 const QZ_PRINTER_STORAGE_KEY = "hanaa-qz-printer";
 let qzScriptPromise = null;
 let qzConnectPromise = null;

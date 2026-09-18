@@ -1,6 +1,6 @@
 import { getOrder } from "./ordersApi";
 
-const QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
+const QZ_SCRIPT_URL = "/qz-tray.js";
 const SESSION_KEY = "hanaa-auth-session";
 const CASHIER_PRINTER_STORAGE_KEY = "hanaa-qz-printer";
 

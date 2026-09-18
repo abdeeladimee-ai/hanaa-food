@@ -1,6 +1,6 @@
 import { getOrder } from "./ordersApi";
 
-const QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
+const QZ_SCRIPT_URL = "/qz-tray.js";
 const PRINTED_PREFIX = "hanaa-kitchen-printed:";
 const DEFAULT_PRINTER_HINT = "imp cuisine";
 const AMGALA_COLD_PRINTER_HINT = "froid";
