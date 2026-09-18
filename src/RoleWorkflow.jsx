@@ -61,7 +61,10 @@ const playNotificationTone = async (role) => {
 
 
 // HANAA_QZ_INTEGRATION_START
+const QZ_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js";
 const QZ_PRINTER_STORAGE_KEY = "hanaa-qz-printer";
+let qzScriptPromise = null;
+let qzConnectPromise = null;
 
 const qzAscii = (value = "") =>
   String(value ?? "")
@@ -120,15 +123,53 @@ const qzItemDetails = (item) => {
     .filter(Boolean);
 };
 
+const qzLoad = () => {
+  if (window.qz) return Promise.resolve(window.qz);
+  if (qzScriptPromise) return qzScriptPromise;
+
+  qzScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${QZ_SCRIPT_URL}"]`);
+
+    if (existing) {
+      if (window.qz) {
+        resolve(window.qz);
+        return;
+      }
+      existing.addEventListener("load", () => resolve(window.qz), { once: true });
+      existing.addEventListener(
+        "error",
+        () => reject(new Error("Impossible de charger QZ Tray.")),
+        { once: true },
+      );
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = QZ_SCRIPT_URL;
+    script.async = true;
+    script.onload = () => resolve(window.qz);
+    script.onerror = () => reject(new Error("Impossible de charger QZ Tray."));
+    document.head.appendChild(script);
+  });
+
+  return qzScriptPromise;
+};
+
 const qzEnsureConnected = async () => {
-  const qz = window.qz;
-  if (!qz) {
-    throw new Error("QZ Tray JavaScript ma tchargach. Verifie internet puis refresh.");
+  const qz = await qzLoad();
+  if (!qz) throw new Error("QZ Tray n'est pas disponible.");
+
+  if (qz.websocket.isActive()) return qz;
+
+  if (!qzConnectPromise) {
+    qzConnectPromise = qz.websocket
+      .connect({ retries: 3, delay: 1 })
+      .finally(() => {
+        qzConnectPromise = null;
+      });
   }
 
-  if (!qz.websocket.isActive()) {
-    await qz.websocket.connect({ retries: 2, delay: 1 });
-  }
+  await qzConnectPromise;
   return qz;
 };
 
@@ -408,23 +449,24 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
     );
   }, [activeOrderType, branchId, driverId, orders, role]);
   const accept = async (order) => {
-    if (order.orderType === "pickup") {
-      transition(order, "VALIDÉE PAR LE SNACK", {
-        cashierAcceptedBy: session?.id || `staff-${branchId}`,
-        cashierAcceptedAt: now(),
-        branchId,
-      });
-    } else {
-      transition(order, "ACCEPTÉE PAR LE CAISSIER", {
-        cashierAcceptedBy: session?.id || `staff-${branchId}`,
-        cashierAcceptedAt: now(),
-        branchId,
-        driverQueueAt: now(),
-      });
-    }
+    const acceptedOrder =
+      order.orderType === "pickup"
+        ? await transition(order, "VALIDÉE PAR LE SNACK", {
+            cashierAcceptedBy: session?.id || `staff-${branchId}`,
+            cashierAcceptedAt: now(),
+            branchId,
+          })
+        : await transition(order, "ACCEPTÉE PAR LE CAISSIER", {
+            cashierAcceptedBy: session?.id || `staff-${branchId}`,
+            cashierAcceptedAt: now(),
+            branchId,
+            driverQueueAt: now(),
+          });
+
+    if (!acceptedOrder) return;
 
     try {
-      const printer = await printOrderTicketQz(order);
+      const printer = await printOrderTicketQz(acceptedOrder);
       setNotification(`TICKET IMPRIMÉ — ${printer}`);
     } catch (error) {
       console.error("QZ print error:", error);
