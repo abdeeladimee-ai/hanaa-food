@@ -284,27 +284,34 @@ function findPrinter(printers, hint) {
 function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
   const ESC = "\x1B";
   const GS = "\x1D";
-  const separator = "------------------------------------------\n";
+  const separator = "==========================================\n";
+  const thin = "------------------------------------------\n";
   const lines = [ESC + "@", ESC + "a" + "\x01"];
   const typeLabel = order.orderType === "pickup" ? "A EMPORTER" : "LIVRAISON";
 
-  lines.push(ESC + "E" + "\x01", "HANAA FOOD - CUISINE\n", ESC + "E" + "\x00");
+  lines.push(ESC + "E" + "\x01");
+  lines.push("HANAA FOOD\n");
+  lines.push(ESC + "E" + "\x00");
   lines.push(branchName(order) + "\n");
 
   if (stationLabel) {
-    lines.push(ESC + "E" + "\x01");
-    lines.push("[" + clean(stationLabel).toUpperCase() + "]\n");
-    lines.push(ESC + "E" + "\x00");
+    lines.push("CUISINE - " + clean(stationLabel).toUpperCase() + "\n");
+  } else {
+    lines.push("CUISINE\n");
   }
 
   lines.push(separator);
 
-  lines.push(ESC + "!" + "\x10", ESC + "E" + "\x01");
-  lines.push("#" + clean(order.id) + "  -  " + typeLabel + "\n");
+  // Numero commande: element principal du ticket cuisine.
+  lines.push(ESC + "E" + "\x01", ESC + "!" + "\x30");
+  lines.push("#" + clean(order.id) + "\n");
+  lines.push(ESC + "!" + "\x00");
+  lines.push(ESC + "!" + "\x10");
+  lines.push(typeLabel + "\n");
   lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
-  lines.push(kitchenTime(order) + "\n");
 
-  lines.push(separator, ESC + "a" + "\x00");
+  lines.push(kitchenTime(order) + "\n");
+  lines.push(separator);
 
   const items = Array.isArray(ticketItems)
     ? ticketItems
@@ -315,25 +322,30 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
   const groups = groupItemsByCategory(items);
 
   groups.forEach(([category, categoryItems], groupIndex) => {
-    if (groupIndex > 0) lines.push(separator);
+    if (groupIndex > 0) lines.push(thin);
 
     lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01");
-    lines.push("*** " + clean(category) + " ***\n");
-    lines.push(ESC + "E" + "\x00", ESC + "a" + "\x00", "\n");
+    lines.push(clean(category) + "\n");
+    lines.push(ESC + "E" + "\x00", ESC + "a" + "\x00");
+    lines.push("\n");
 
     categoryItems.forEach((item, itemIndex) => {
       const qty = Number(item.quantity || 1);
       const name = clean(item.name || item.title || "Produit");
 
+      // Produit + quantite lisibles rapidement en cuisine.
       lines.push(ESC + "E" + "\x01", ESC + "!" + "\x10");
       lines.push(qty + " X " + name + "\n");
       lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
 
-      itemDetails(item).forEach((detail) => {
-        lines.push("   > " + clean(detail) + "\n");
+      const details = itemDetails(item);
+      details.forEach((detail) => {
+        lines.push(" - " + clean(detail) + "\n");
       });
 
-      if (itemIndex < categoryItems.length - 1) lines.push("\n");
+      if (itemIndex < categoryItems.length - 1) {
+        lines.push("\n");
+      }
     });
   });
 
@@ -341,16 +353,14 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
     lines.push(separator);
     lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01");
     lines.push("NOTE CUISINE\n");
-    lines.push(ESC + "E" + "\x00", ESC + "a" + "\x00");
     lines.push(ESC + "!" + "\x10");
     lines.push(clean(order.notes || order.note) + "\n");
-    lines.push(ESC + "!" + "\x00");
+    lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
   }
 
   lines.push(separator);
-  lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01");
-  lines.push("A PREPARER\n");
-  lines.push(ESC + "E" + "\x00");
+  lines.push(ESC + "a" + "\x01");
+  lines.push("FIN COMMANDE #" + clean(order.id) + "\n");
   lines.push("\n\n\n");
   lines.push(GS + "V" + "\x41" + "\x00");
 
