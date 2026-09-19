@@ -714,6 +714,66 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
 
   return (
     <main className={`workflow-page workflow-${role}`}>
+      {role === "snack" && (
+        <style>{`
+          .workflow-snack {
+            padding: 22px 18px 50px !important;
+          }
+          .workflow-snack .workflow-header,
+          .workflow-snack .admin-navigation,
+          .workflow-snack .workflow-filter-note,
+          .workflow-snack > .workflow-actions,
+          .workflow-snack .workflow-orders,
+          .workflow-snack .workflow-sound,
+          .workflow-snack .workflow-notification {
+            width: min(880px, 100%) !important;
+            max-width: 880px !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+          }
+          .workflow-snack .workflow-header {
+            margin-bottom: 16px !important;
+            align-items: center !important;
+          }
+          .workflow-snack .workflow-header h1 {
+            font-size: 28px !important;
+          }
+          .workflow-snack .admin-navigation {
+            margin-bottom: 16px !important;
+          }
+          .workflow-snack .workflow-filter-note {
+            margin-bottom: 12px !important;
+          }
+          .workflow-snack > .workflow-actions {
+            margin-bottom: 16px !important;
+            justify-content: flex-end !important;
+          }
+          .workflow-snack .workflow-orders {
+            padding: 16px !important;
+            margin-bottom: 16px !important;
+            border-radius: 12px !important;
+          }
+          .workflow-snack .workflow-empty {
+            padding: 32px 16px !important;
+          }
+          @media (max-width: 760px) {
+            .workflow-snack {
+              padding: 16px 12px 40px !important;
+            }
+            .workflow-snack .workflow-header {
+              align-items: flex-start !important;
+              flex-direction: column !important;
+            }
+            .workflow-snack .workflow-header-actions {
+              width: 100%;
+              justify-content: space-between;
+            }
+            .workflow-snack > .workflow-actions {
+              justify-content: stretch !important;
+            }
+          }
+        `}</style>
+      )}
       {role === "admin" && (
         <style>{`
           .workflow-admin {
