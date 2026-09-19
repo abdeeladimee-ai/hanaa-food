@@ -475,13 +475,29 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
     if (!acceptedOrder) return;
 
     try {
+      if (role === "snack") {
+        const printKitchen = window.__hanaaPrintKitchenOrder;
+        if (typeof printKitchen !== "function") {
+          throw new Error("Module impression cuisine mazal ma tchargach.");
+        }
+
+        const kitchenPrinters = await printKitchen(acceptedOrder.id);
+        if (!Array.isArray(kitchenPrinters) || kitchenPrinters.length === 0) {
+          throw new Error("Ticket cuisine ma khrejch.");
+        }
+
+        setNotification(
+          `CUISINE IMPRIMÉE — ${kitchenPrinters.join(" + ")}`
+        );
+      }
+
       const printer = await printOrderTicketQz(acceptedOrder);
-      setNotification(`TICKET IMPRIMÉ — ${printer}`);
+      setNotification(`CUISINE + CAISSE IMPRIMÉES — ${printer}`);
     } catch (error) {
       console.error("QZ print error:", error);
-      setNotification("COMMANDE ACCEPTÉE — IMPRESSION À VÉRIFIER");
+      setNotification("COMMANDE ACCEPTÉE — TICKET CUISINE À VÉRIFIER");
       window.alert(
-        `Commande acceptée, mais ticket ma khrejch.\n${error?.message || error}\n\nKhalli QZ Tray ma7loul puis 3awed jarrab.`
+        `Commande acceptée, mais ticket cuisine ma khrejch.\n${error?.message || error}\n\nVerifie QZ Tray w imprimante cuisine.`
       );
     }
   };

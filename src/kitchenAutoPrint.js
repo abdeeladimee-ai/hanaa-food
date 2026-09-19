@@ -321,14 +321,21 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
   return lines;
 }
 
-async function printKitchenOrder(orderId) {
-  if (!orderId || inFlight.has(orderId)) return;
+async function printKitchenOrder(orderId, { required = false } = {}) {
+  if (!orderId) {
+    if (required) throw new Error("ID commande cuisine manquant.");
+    return [];
+  }
+  if (inFlight.has(orderId)) {
+    if (required) throw new Error("Impression cuisine deja en cours.");
+    return [];
+  }
 
   const nextRetryAt = retryAfter.get(orderId) || 0;
-  if (Date.now() < nextRetryAt) return;
+  if (!required && Date.now() < nextRetryAt) return [];
 
   const printedKey = `${PRINTED_PREFIX}${orderId}`;
-  if (localStorage.getItem(printedKey)) return;
+  if (localStorage.getItem(printedKey)) return ["already-printed"];
 
   inFlight.add(orderId);
 
@@ -381,9 +388,12 @@ async function printKitchenOrder(orderId) {
     localStorage.setItem(printedKey, new Date().toISOString());
     retryAfter.delete(orderId);
     console.info(`Ticket cuisine #${orderId} imprime sur ${printedOn.join(" + ")}.`);
+    return printedOn;
   } catch (error) {
     retryAfter.set(orderId, Date.now() + RETRY_COOLDOWN_MS);
     console.error(`Impression cuisine impossible pour #${orderId}:`, error);
+    if (required) throw error;
+    return [];
   } finally {
     inFlight.delete(orderId);
   }
@@ -414,6 +424,9 @@ function scheduleScan() {
 }
 
 if (typeof window !== "undefined") {
+  window.__hanaaPrintKitchenOrder = (orderId) =>
+    printKitchenOrder(orderId, { required: true });
+
   const observer = new MutationObserver(scheduleScan);
   observer.observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener("load", scheduleScan);
