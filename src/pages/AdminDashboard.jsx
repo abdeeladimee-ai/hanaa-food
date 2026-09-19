@@ -422,6 +422,143 @@ export default function AdminDashboard({ onNavigate }) {
         </button>
       </div>
 
+      <section style={s.kpis}>
+        <Kpi
+          title="COMMANDES AUJOURD’HUI"
+          value={todayOrders.length}
+          text={`${deliveredToday.length + pickupToday.length} terminées`}
+        />
+        <Kpi
+          title="CA TERMINÉ"
+          value={dh(revenue)}
+          text="Livraison + à emporter"
+        />
+        <Kpi
+          title="ESPÈCES CHEZ LIVREURS"
+          value={dh(cashDrivers)}
+          text="À contrôler dans le collect"
+        />
+        <Kpi
+          title="FRAIS LIVRAISON"
+          value={dh(deliveryFees)}
+          text={`${deliveredToday.length} livraisons`}
+        />
+        <Kpi
+          title="LIVRAISONS EN COURS"
+          value={activeDeliveries.length}
+          text="Acceptées / prises / route"
+          accent
+        />
+        <Kpi
+          title="ATTENTE SNACK"
+          value={waitingSnack.length}
+          text="À accepter ou refuser"
+          alert
+        />
+      </section>
+
+      <Box title="Restaurants — aujourd’hui">
+        <div style={s.branches}>
+          {branchStats.map((branch) => (
+            <article key={branch.id} style={s.branch}>
+              <div style={s.branchHead}>
+                <h3 style={{ margin: 0 }}>{branch.name}</h3>
+                <span
+                  style={{
+                    ...s.branchBadge,
+                    ...(branch.waiting > 0 ? s.branchBadgeBusy : s.branchBadgeOk),
+                  }}
+                >
+                  {branch.waiting > 0 ? `${branch.waiting} attente` : "OK"}
+                </span>
+              </div>
+              <Line name="Commandes" value={branch.count} />
+              <Line name="Terminées" value={branch.done} />
+              <Line name="En attente" value={branch.waiting} />
+              <Line name="CA terminé" value={dh(branch.revenue)} strong />
+            </article>
+          ))}
+        </div>
+      </Box>
+
+      <Box title="Dernières commandes">
+        <div style={s.tableWrap}>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <Th>Commande</Th>
+                <Th>Type</Th>
+                <Th>Branche</Th>
+                <Th>Client</Th>
+                <Th>Total</Th>
+                <Th>Statut</Th>
+                <Th>Livreur</Th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {latest.map((order) => (
+                <tr key={order.id}>
+                  <Td>
+                    <b>#{order.id}</b>
+                  </Td>
+                  <Td>
+                    {order.orderType === "pickup" ? "À emporter" : "Livraison"}
+                  </Td>
+                  <Td>
+                    {order.branchName || branchNames[order.branchId] || "—"}
+                  </Td>
+                  <Td>{order.customerName || "Client"}</Td>
+                  <Td>
+                    <b>{dh(order.total)}</b>
+                  </Td>
+                  <Td>{order.statusLabel || "—"}</Td>
+                  <Td>{order.driverName || "—"}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Box>
+      <Box title="Livreurs — aujourd’hui">
+        {driverStats.length ? (
+          <div style={s.tableWrap}>
+            <table style={s.table}>
+              <thead>
+                <tr>
+                  <Th>Livreur</Th>
+                  <Th>Livrées</Th>
+                  <Th>En cours</Th>
+                  <Th>Total commandes</Th>
+                  <Th>Frais</Th>
+                  <Th>Espèces en main</Th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {driverStats.map((driver) => (
+                  <tr key={driver.id}>
+                    <Td>
+                      <b>{driver.name}</b>
+                      <small style={s.id}>{driver.id}</small>
+                    </Td>
+                    <Td>{driver.delivered}</Td>
+                    <Td>{driver.active}</Td>
+                    <Td>{dh(driver.total)}</Td>
+                    <Td>{dh(driver.fees)}</Td>
+                    <Td>
+                      <b>{dh(driver.cash)}</b>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={s.empty}>Aucune activité livreur aujourd’hui.</div>
+        )}
+      </Box>
+
       <Box title="Paramètres des restaurants">
         <p style={s.help}>
           Hna nta li kat7edded wach kol branche fiha livraison wla la, wach fiha
@@ -465,7 +602,7 @@ export default function AdminDashboard({ onNavigate }) {
                 </label>
 
                 <label style={s.serviceField}>
-                  <span>À emporter</span>
+                  <span>Commandes à emporter</span>
                   <select
                     style={s.serviceSelect}
                     value={branch.pickupEnabled ? "on" : "off"}
@@ -556,138 +693,19 @@ export default function AdminDashboard({ onNavigate }) {
         </div>
       </Box>
 
-      <section style={s.kpis}>
-        <Kpi
-          title="COMMANDES AUJOURD’HUI"
-          value={todayOrders.length}
-          text={`${deliveredToday.length + pickupToday.length} terminées`}
-        />
-        <Kpi
-          title="CA TERMINÉ"
-          value={dh(revenue)}
-          text="Livraison + à emporter"
-        />
-        <Kpi
-          title="ESPÈCES CHEZ LIVREURS"
-          value={dh(cashDrivers)}
-          text="À contrôler dans le collect"
-        />
-        <Kpi
-          title="FRAIS LIVRAISON"
-          value={dh(deliveryFees)}
-          text={`${deliveredToday.length} livraisons`}
-        />
-        <Kpi
-          title="LIVRAISONS EN COURS"
-          value={activeDeliveries.length}
-          text="Acceptées / prises / route"
-        />
-        <Kpi
-          title="ATTENTE SNACK"
-          value={waitingSnack.length}
-          text="À accepter ou refuser"
-        />
-      </section>
-
-      <Box title="Livreurs — aujourd’hui">
-        {driverStats.length ? (
-          <div style={s.tableWrap}>
-            <table style={s.table}>
-              <thead>
-                <tr>
-                  <Th>Livreur</Th>
-                  <Th>Livrées</Th>
-                  <Th>En cours</Th>
-                  <Th>Total commandes</Th>
-                  <Th>Frais</Th>
-                  <Th>Espèces en main</Th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {driverStats.map((driver) => (
-                  <tr key={driver.id}>
-                    <Td>
-                      <b>{driver.name}</b>
-                      <small style={s.id}>{driver.id}</small>
-                    </Td>
-                    <Td>{driver.delivered}</Td>
-                    <Td>{driver.active}</Td>
-                    <Td>{dh(driver.total)}</Td>
-                    <Td>{dh(driver.fees)}</Td>
-                    <Td>
-                      <b>{dh(driver.cash)}</b>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div style={s.empty}>Aucune activité livreur aujourd’hui.</div>
-        )}
-      </Box>
-
-      <Box title="Restaurants — aujourd’hui">
-        <div style={s.branches}>
-          {branchStats.map((branch) => (
-            <article key={branch.id} style={s.branch}>
-              <h3>{branch.name}</h3>
-              <Line name="Commandes" value={branch.count} />
-              <Line name="Terminées" value={branch.done} />
-              <Line name="En attente" value={branch.waiting} />
-              <Line name="CA terminé" value={dh(branch.revenue)} strong />
-            </article>
-          ))}
-        </div>
-      </Box>
-
-      <Box title="Dernières commandes">
-        <div style={s.tableWrap}>
-          <table style={s.table}>
-            <thead>
-              <tr>
-                <Th>Commande</Th>
-                <Th>Type</Th>
-                <Th>Branche</Th>
-                <Th>Client</Th>
-                <Th>Total</Th>
-                <Th>Statut</Th>
-                <Th>Livreur</Th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {latest.map((order) => (
-                <tr key={order.id}>
-                  <Td>
-                    <b>#{order.id}</b>
-                  </Td>
-                  <Td>
-                    {order.orderType === "pickup" ? "À emporter" : "Livraison"}
-                  </Td>
-                  <Td>
-                    {order.branchName || branchNames[order.branchId] || "—"}
-                  </Td>
-                  <Td>{order.customerName || "Client"}</Td>
-                  <Td>
-                    <b>{dh(order.total)}</b>
-                  </Td>
-                  <Td>{order.statusLabel || "—"}</Td>
-                  <Td>{order.driverName || "—"}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Box>
     </main>
   );
 }
 
-function Kpi({ title, value, text }) {
+function Kpi({ title, value, text, accent = false, alert = false }) {
   return (
-    <article style={s.kpi}>
+    <article
+      style={{
+        ...s.kpi,
+        ...(accent ? s.kpiAccent : {}),
+        ...(alert ? s.kpiAlert : {}),
+      }}
+    >
       <small style={s.label}>{title}</small>
       <strong style={s.value}>{value}</strong>
       <span style={s.muted}>{text}</span>
@@ -797,6 +815,15 @@ const s = {
     border: "1px solid #f0d6d8",
     borderRadius: 17,
     padding: 18,
+    boxShadow: "0 8px 24px rgba(89, 18, 22, .05)",
+  },
+  kpiAccent: {
+    borderColor: "#e6a8ac",
+    background: "#fffafa",
+  },
+  kpiAlert: {
+    borderColor: "#D71920",
+    background: "#fff0f1",
   },
   value: {
     display: "block",
@@ -1028,6 +1055,29 @@ const s = {
     border: "1px solid #f0d6d8",
     borderRadius: 15,
     padding: 16,
+    boxShadow: "0 8px 20px rgba(89, 18, 22, .04)",
+  },
+  branchHead: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+  },
+  branchBadge: {
+    borderRadius: 999,
+    padding: "5px 9px",
+    fontSize: 10,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  },
+  branchBadgeOk: {
+    background: "#eef8ef",
+    color: "#25712d",
+  },
+  branchBadgeBusy: {
+    background: "#fff0f1",
+    color: "#D71920",
   },
   line: {
     display: "flex",

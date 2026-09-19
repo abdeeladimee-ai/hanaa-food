@@ -94,7 +94,7 @@ export default function AdminDirectory({ type, onNavigate }) {
               {onlyDrivers ? "Gestion des livreurs" : "Gestion de l’équipe"}
             </h1>
             <p style={s.sub}>
-              Nta admin: nta li katzid caissier/livreur w nta li kat7edded compte dyalou.
+              Gestion dyal caissiers w livreurs f 3 lmahalat.
             </p>
           </div>
         </div>
@@ -134,7 +134,7 @@ export default function AdminDirectory({ type, onNavigate }) {
             Mot de passe
             <input
               style={s.input}
-              type="text"
+              type="password"
               minLength={4}
               value={form.password}
               onChange={(event) => update("password", event.target.value)}
@@ -243,7 +243,7 @@ export default function AdminDirectory({ type, onNavigate }) {
             ))}
           </div>
         ) : (
-          <div style={s.empty}>Mazal ma زدتي ta compte mn hna.</div>
+          <div style={s.empty}>Mazal ma zaditi ta compte mn hna.</div>
         )}
       </section>
     </main>
