@@ -398,23 +398,15 @@ async function printKitchenOrder(orderId, { required = false } = {}) {
 
     if (isAmgalaOrder(order)) {
       const items = Array.isArray(order.items) ? order.items : [];
-      const { cold, hot } = splitAmgalaItems(items);
+      const hotPrinter = findPrinter(printers, AMGALA_HOT_PRINTER_HINT);
 
-      if (cold.length) {
-        const coldPrinter = findPrinter(printers, AMGALA_COLD_PRINTER_HINT);
-        if (!coldPrinter) throw new Error("Imprimante cuisine 'froid' introuvable.");
-        const coldConfig = qz.configs.create(coldPrinter, { encoding: "CP858" });
-        await qz.print(coldConfig, buildKitchenTicket(order, cold, "FROID"));
-        printedOn.push(coldPrinter);
+      if (!hotPrinter) {
+        throw new Error("Imprimante cuisine 'chaud' introuvable.");
       }
 
-      if (hot.length) {
-        const hotPrinter = findPrinter(printers, AMGALA_HOT_PRINTER_HINT);
-        if (!hotPrinter) throw new Error("Imprimante cuisine 'chaud' introuvable.");
-        const hotConfig = qz.configs.create(hotPrinter, { encoding: "CP858" });
-        await qz.print(hotConfig, buildKitchenTicket(order, hot, "CHAUD"));
-        printedOn.push(hotPrinter);
-      }
+      const hotConfig = qz.configs.create(hotPrinter, { encoding: "CP858" });
+      await qz.print(hotConfig, buildKitchenTicket(order, items, "CHAUD"));
+      printedOn.push(hotPrinter);
     } else {
       const printer = findPrinter(printers, DEFAULT_PRINTER_HINT);
       if (!printer) throw new Error("Imprimante cuisine 'imp cuisine' introuvable.");
