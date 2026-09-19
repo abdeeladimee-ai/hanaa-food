@@ -65,7 +65,7 @@ const playNotificationTone = async (role) => {
 const QZ_SCRIPT_URL = "/qz-tray.js";
 const QZ_PRINTER_STORAGE_KEY = "hanaa-qz-printer";
 let qzScriptPromise = null;
-let qzConnectPromise = null;
+const QZ_GLOBAL_CONNECT_KEY = "__hanaaQzConnectPromise";
 
 const qzAscii = (value = "") =>
   String(value ?? "")
@@ -170,15 +170,15 @@ const qzEnsureConnected = async () => {
   }
   if (qz.websocket.isActive()) return qz;
 
-  if (!qzConnectPromise) {
-    qzConnectPromise = qz.websocket
+  if (!window[QZ_GLOBAL_CONNECT_KEY]) {
+    window[QZ_GLOBAL_CONNECT_KEY] = qz.websocket
       .connect({ retries: 3, delay: 1 })
       .finally(() => {
-        qzConnectPromise = null;
+        window[QZ_GLOBAL_CONNECT_KEY] = null;
       });
   }
 
-  await qzConnectPromise;
+  await window[QZ_GLOBAL_CONNECT_KEY];
   return qz;
 };
 

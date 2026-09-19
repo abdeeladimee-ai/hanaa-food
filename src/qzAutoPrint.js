@@ -6,7 +6,7 @@ const SESSION_KEY = "hanaa-auth-session";
 const CASHIER_PRINTER_STORAGE_KEY = "hanaa-qz-printer";
 
 let qzScriptPromise;
-let connectPromise;
+const QZ_GLOBAL_CONNECT_KEY = "__hanaaQzConnectPromise";
 
 function currentBranchId() {
   try {
@@ -72,15 +72,15 @@ async function getQz() {
     }
   }
   if (qz.websocket.isActive()) return qz;
-  if (!connectPromise) {
-    connectPromise = qz.websocket
+  if (!window[QZ_GLOBAL_CONNECT_KEY]) {
+    window[QZ_GLOBAL_CONNECT_KEY] = qz.websocket
       .connect({ retries: 3, delay: 1 })
       .finally(() => {
-        connectPromise = null;
+        window[QZ_GLOBAL_CONNECT_KEY] = null;
       });
   }
 
-  await connectPromise;
+  await window[QZ_GLOBAL_CONNECT_KEY];
   return qz;
 }
 
@@ -324,7 +324,7 @@ function installManualPrintButtons() {
   observer.observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener("load", syncButtons);
   window.addEventListener("popstate", () => setTimeout(syncButtons, 50));
-  setInterval(syncButtons, 1500);
+  setInterval(syncButtons, 5000);
   syncButtons();
 }
 

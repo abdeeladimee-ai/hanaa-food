@@ -8,8 +8,10 @@ const AMGALA_COLD_PRINTER_HINT = "froid";
 const AMGALA_HOT_PRINTER_HINT = "chaud";
 const MAX_ACCEPT_AGE_MS = 15 * 60 * 1000;
 const inFlight = new Set();
+const retryAfter = new Map();
+const RETRY_COOLDOWN_MS = 30000;
 let qzScriptPromise = null;
-let connectPromise = null;
+const QZ_GLOBAL_CONNECT_KEY = "__hanaaQzConnectPromise";
 let scanScheduled = false;
 
 const CATEGORY_RANGES = [
@@ -226,15 +228,15 @@ async function getQz() {
   }
   if (qz.websocket.isActive()) return qz;
 
-  if (!connectPromise) {
-    connectPromise = qz.websocket
+  if (!window[QZ_GLOBAL_CONNECT_KEY]) {
+    window[QZ_GLOBAL_CONNECT_KEY] = qz.websocket
       .connect({ retries: 3, delay: 1 })
       .finally(() => {
-        connectPromise = null;
+        window[QZ_GLOBAL_CONNECT_KEY] = null;
       });
   }
 
-  await connectPromise;
+  await window[QZ_GLOBAL_CONNECT_KEY];
   return qz;
 }
 
@@ -322,6 +324,9 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
 async function printKitchenOrder(orderId) {
   if (!orderId || inFlight.has(orderId)) return;
 
+  const nextRetryAt = retryAfter.get(orderId) || 0;
+  if (Date.now() < nextRetryAt) return;
+
   const printedKey = `${PRINTED_PREFIX}${orderId}`;
   if (localStorage.getItem(printedKey)) return;
 
@@ -374,8 +379,10 @@ async function printKitchenOrder(orderId) {
     if (!printedOn.length) throw new Error("Aucun article cuisine a imprimer.");
 
     localStorage.setItem(printedKey, new Date().toISOString());
+    retryAfter.delete(orderId);
     console.info(`Ticket cuisine #${orderId} imprime sur ${printedOn.join(" + ")}.`);
   } catch (error) {
+    retryAfter.set(orderId, Date.now() + RETRY_COOLDOWN_MS);
     console.error(`Impression cuisine impossible pour #${orderId}:`, error);
   } finally {
     inFlight.delete(orderId);
