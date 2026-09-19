@@ -1,3 +1,5 @@
+import { requireSupabase } from "./supabase";
+
 const sessionKey = "hanaa-auth-session";
 const staffKey = "hanaa-staff-accounts";
 
@@ -102,7 +104,63 @@ const saveStaffAccounts = (accounts) => {
   window.dispatchEvent(new Event("hanaa-staff-updated"));
 };
 
-export const addStaffAccount = ({
+const readRawSession = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem(sessionKey) || "null");
+  } catch {
+    return null;
+  }
+};
+
+const getCloudToken = () => String(readRawSession()?.cloudToken || "");
+
+const cloudRpc = async (name, args) => {
+  const supabase = requireSupabase();
+  const { data, error } = await supabase.rpc(name, args);
+  if (error) throw error;
+  return data;
+};
+
+const migrateLegacyStaffAccounts = async (token) => {
+  const legacy = getStaffAccounts().filter(
+    (item) =>
+      item?.password &&
+      ["SNACK", "LIVREUR"].includes(normalizeRole(item.role)),
+  );
+
+  for (const item of legacy) {
+    const role = normalizeRole(item.role);
+    await cloudRpc("staff_admin_upsert", {
+      p_token: token,
+      p_name: String(item.name || "").trim(),
+      p_phone: normalizePhone(item.phone),
+      p_password: String(item.password || ""),
+      p_role: role,
+      p_branch_id: role === "SNACK" ? item.branchId || "tadart" : null,
+      p_branch_name:
+        role === "SNACK"
+          ? item.branchName || branchNames[item.branchId] || branchNames.tadart
+          : null,
+    });
+  }
+};
+
+const listCloudStaffAccounts = async (token) => {
+  const data = await cloudRpc("staff_admin_list", { p_token: token });
+  return Array.isArray(data) ? data : [];
+};
+
+export const refreshStaffAccounts = async () => {
+  const token = getCloudToken();
+  if (!token) return getStaffAccounts();
+
+  await migrateLegacyStaffAccounts(token);
+  const accounts = await listCloudStaffAccounts(token);
+  saveStaffAccounts(accounts);
+  return accounts;
+};
+
+export const addStaffAccount = async ({
   name,
   phone,
   password,
@@ -117,7 +175,7 @@ export const addStaffAccount = ({
   if (!cleanName || !cleanPhone || cleanPassword.length < 4 || !cleanRole) {
     return {
       ok: false,
-      error: "Kammel smiya, téléphone, rôle w mot de passe.",
+      error: "Kammel smiya, telephone, role w mot de passe.",
     };
   }
 
@@ -128,60 +186,65 @@ export const addStaffAccount = ({
     };
   }
 
-  const current = getStaffAccounts();
-  const exists = current.some(
-    (item) => normalizePhone(item.phone) === cleanPhone,
-  );
-
-  if (exists) {
+  const token = getCloudToken();
+  if (!token) {
     return {
       ok: false,
-      error: "Had numéro deja kayn.",
+      error: "3awed dkhol b compte admin bach t7fed lcompte online.",
     };
   }
 
-  const prefix = cleanRole === "LIVREUR" ? "driver" : "snack";
+  try {
+    const account = await cloudRpc("staff_admin_upsert", {
+      p_token: token,
+      p_name: cleanName,
+      p_phone: cleanPhone,
+      p_password: cleanPassword,
+      p_role: cleanRole,
+      p_branch_id: cleanRole === "SNACK" ? branchId : null,
+      p_branch_name:
+        cleanRole === "SNACK" ? branchNames[branchId] : null,
+    });
 
-  const account = {
-    id: `${prefix}-${Date.now()}`,
-    phone: cleanPhone,
-    password: cleanPassword,
-    role: cleanRole,
-    name: cleanName,
-    active: true,
-    createdAt: new Date().toISOString(),
-    ...(cleanRole === "SNACK"
-      ? {
-          branchId,
-          branchName: branchNames[branchId],
-        }
-      : {}),
-  };
+    const accounts = await listCloudStaffAccounts(token);
+    saveStaffAccounts(accounts);
 
-  saveStaffAccounts([account, ...current]);
-
-  return {
-    ok: true,
-    account,
-  };
+    return { ok: true, account };
+  } catch (error) {
+    console.error("Staff account save failed:", error);
+    return {
+      ok: false,
+      error: "Ma t7fedch lcompte. 3awed dkhol admin w jarrab.",
+    };
+  }
 };
 
-export const deleteStaffAccount = (id) => {
-  const next = getStaffAccounts().filter((item) => item.id !== id);
-  saveStaffAccounts(next);
+export const deleteStaffAccount = async (id) => {
+  const token = getCloudToken();
+  if (!token) throw new Error("ADMIN_RELOGIN_REQUIRED");
+
+  await cloudRpc("staff_admin_delete", {
+    p_token: token,
+    p_account_id: String(id),
+  });
+
+  const accounts = await listCloudStaffAccounts(token);
+  saveStaffAccounts(accounts);
+  return accounts;
 };
 
-export const toggleStaffAccount = (id) => {
-  const next = getStaffAccounts().map((item) =>
-    item.id === id
-      ? {
-          ...item,
-          active: item.active === false,
-        }
-      : item,
-  );
+export const toggleStaffAccount = async (id) => {
+  const token = getCloudToken();
+  if (!token) throw new Error("ADMIN_RELOGIN_REQUIRED");
 
-  saveStaffAccounts(next);
+  await cloudRpc("staff_admin_toggle", {
+    p_token: token,
+    p_account_id: String(id),
+  });
+
+  const accounts = await listCloudStaffAccounts(token);
+  saveStaffAccounts(accounts);
+  return accounts;
 };
 
 export const homePathForRole = (role) =>
@@ -223,6 +286,11 @@ export const getSession = () => {
     const role = normalizeRole(session.role);
     if (!role) return null;
 
+    if (role === "ADMIN" && !session.cloudToken) {
+      sessionStorage.removeItem(sessionKey);
+      return null;
+    }
+
     return {
       ...session,
       role,
@@ -236,8 +304,39 @@ export const signIn = async (identifier, password) => {
   const value = String(identifier || "").trim();
   const lowerValue = value.toLowerCase();
   const phoneValue = normalizePhone(value);
-  const enteredHash = await hashPassword(password);
 
+  try {
+    const cloudAccount = await cloudRpc("staff_login", {
+      p_identifier: value,
+      p_password: String(password || ""),
+    });
+
+    if (cloudAccount?.role) {
+      const session = {
+        ...cloudAccount,
+        role: normalizeRole(cloudAccount.role),
+        authenticatedAt: new Date().toISOString(),
+      };
+
+      sessionStorage.setItem(sessionKey, JSON.stringify(session));
+
+      if (session.role === "ADMIN" && session.cloudToken) {
+        try {
+          await migrateLegacyStaffAccounts(session.cloudToken);
+          const accounts = await listCloudStaffAccounts(session.cloudToken);
+          saveStaffAccounts(accounts);
+        } catch (error) {
+          console.error("Legacy staff sync failed:", error);
+        }
+      }
+
+      return session;
+    }
+  } catch (error) {
+    console.error("Cloud staff login failed:", error);
+  }
+
+  const enteredHash = await hashPassword(password);
   const accounts = [...devAccounts, ...getStaffAccounts()];
   let account = null;
 
@@ -263,9 +362,11 @@ export const signIn = async (identifier, password) => {
     }
   }
 
-  if (!account) return null;
+  if (!account || normalizeRole(account.role) === "ADMIN") return null;
 
-  const { password: _password, passwordHash: _passwordHash, ...safeAccount } = account;
+  const { password: _password, passwordHash: _passwordHash, ...safeAccount } =
+    account;
+
   const session = {
     ...safeAccount,
     role: normalizeRole(account.role),
@@ -277,6 +378,17 @@ export const signIn = async (identifier, password) => {
 };
 
 export const signOut = () => {
+  const token = getCloudToken();
+
+  if (token) {
+    try {
+      const supabase = requireSupabase();
+      void supabase.rpc("staff_logout", { p_token: token });
+    } catch {
+      // Local logout must still work if Supabase is temporarily unavailable.
+    }
+  }
+
   sessionStorage.removeItem(sessionKey);
 };
 

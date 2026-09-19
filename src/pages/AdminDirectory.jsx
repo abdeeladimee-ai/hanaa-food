@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   addStaffAccount,
   deleteStaffAccount,
-  getStaffAccounts,
+  refreshStaffAccounts,
   toggleStaffAccount,
 } from "../auth";
 
@@ -14,7 +14,8 @@ const branches = [
 
 export default function AdminDirectory({ type, onNavigate }) {
   const onlyDrivers = type === "drivers";
-  const [accounts, setAccounts] = useState(getStaffAccounts);
+  const [accounts, setAccounts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -24,12 +25,25 @@ export default function AdminDirectory({ type, onNavigate }) {
   });
   const [message, setMessage] = useState("");
 
-  const refresh = () => setAccounts(getStaffAccounts());
+  const refresh = async () => {
+    try {
+      const next = await refreshStaffAccounts();
+      setAccounts(next);
+    } catch (error) {
+      console.error("Staff refresh failed:", error);
+      setMessage("3awed dkhol b compte admin bach nchargiw les comptes.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const sync = () => refresh();
+    void refresh();
+
+    const sync = () => void refresh();
     window.addEventListener("hanaa-staff-updated", sync);
     window.addEventListener("storage", sync);
+
     return () => {
       window.removeEventListener("hanaa-staff-updated", sync);
       window.removeEventListener("storage", sync);
@@ -47,9 +61,9 @@ export default function AdminDirectory({ type, onNavigate }) {
   const update = (key, value) =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
-    const result = addStaffAccount({
+    const result = await addStaffAccount({
       ...form,
       role: onlyDrivers ? "LIVREUR" : form.role,
     });
@@ -67,7 +81,7 @@ export default function AdminDirectory({ type, onNavigate }) {
       role: onlyDrivers ? "LIVREUR" : "SNACK",
       branchId: "tadart",
     });
-    refresh();
+    await refresh();
   };
 
   const currentRole = onlyDrivers ? "LIVREUR" : form.role;
@@ -190,7 +204,9 @@ export default function AdminDirectory({ type, onNavigate }) {
           <span style={s.count}>{visible.length}</span>
         </div>
 
-        {visible.length ? (
+        {loading ? (
+          <div style={s.empty}>Kanchargiw les comptes...</div>
+        ) : visible.length ? (
           <div style={s.grid}>
             {visible.map((account) => (
               <article key={account.id} style={s.card}>
@@ -219,9 +235,14 @@ export default function AdminDirectory({ type, onNavigate }) {
                 <div style={s.cardActions}>
                   <button
                     style={s.secondary}
-                    onClick={() => {
-                      toggleStaffAccount(account.id);
-                      refresh();
+                    onClick={async () => {
+                      try {
+                        await toggleStaffAccount(account.id);
+                        await refresh();
+                      } catch (error) {
+                        console.error("Staff toggle failed:", error);
+                        setMessage("Ma tbdlch statut. 3awed dkhol admin.");
+                      }
                     }}
                   >
                     {account.active === false ? "ACTIVER" : "DÉSACTIVER"}
@@ -229,10 +250,15 @@ export default function AdminDirectory({ type, onNavigate }) {
 
                   <button
                     style={s.danger}
-                    onClick={() => {
+                    onClick={async () => {
                       if (window.confirm(`Supprimer ${account.name} ?`)) {
-                        deleteStaffAccount(account.id);
-                        refresh();
+                        try {
+                          await deleteStaffAccount(account.id);
+                          await refresh();
+                        } catch (error) {
+                          console.error("Staff delete failed:", error);
+                          setMessage("Ma tm7ach lcompte. 3awed dkhol admin.");
+                        }
                       }
                     }}
                   >
