@@ -1,4 +1,5 @@
 import { getOrder } from "./ordersApi";
+import { configureQzSecurity } from "./qzSecurity";
 
 const QZ_SCRIPT_URL = "/qz-tray.js";
 const PRINTED_PREFIX = "hanaa-kitchen-printed:";
@@ -215,6 +216,7 @@ function loadQz() {
 async function getQz() {
   const qz = await loadQz();
   if (!qz) throw new Error("QZ Tray n'est pas disponible.");
+  configureQzSecurity(qz);
   if (qz.websocket.isActive()) return qz;
 
   if (!connectPromise) {
