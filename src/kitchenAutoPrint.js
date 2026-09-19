@@ -216,7 +216,14 @@ function loadQz() {
 async function getQz() {
   const qz = await loadQz();
   if (!qz) throw new Error("QZ Tray n'est pas disponible.");
-  configureQzSecurity(qz);
+  const securityConfiguredNow = configureQzSecurity(qz);
+  if (securityConfiguredNow && qz.websocket.isActive()) {
+    try {
+      await qz.websocket.disconnect();
+    } catch {
+      // Reconnect below with the trusted certificate.
+    }
+  }
   if (qz.websocket.isActive()) return qz;
 
   if (!connectPromise) {
