@@ -50,18 +50,31 @@ async function signRequest(toSign, allowRetry = true) {
 }
 
 export function configureQzSecurity(qz) {
-  if (!qz?.security || qz.__hanaaSecurityConfigured) return;
+  if (!qz?.security) return false;
+  if (qz.__hanaaSecurityConfigured) return false;
 
   qz.security.setSignatureAlgorithm("SHA512");
   qz.security.setCertificatePromise(
-    async () => {
-      const response = await fetch(QZ_CERT_URL, { cache: "no-store" });
-      if (!response.ok) throw new Error("Certificat QZ introuvable.");
-      return response.text();
+    (resolve, reject) => {
+      fetch(QZ_CERT_URL, {
+        cache: "no-store",
+        headers: { "Content-Type": "text/plain" },
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error("Certificat QZ introuvable.");
+          return response.text();
+        })
+        .then(resolve)
+        .catch(reject);
     },
     { rejectOnFailure: true },
   );
-  qz.security.setSignaturePromise(async (toSign) => signRequest(toSign));
+
+  qz.security.setSignaturePromise((toSign) => {
+    return (resolve, reject) => {
+      signRequest(toSign).then(resolve).catch(reject);
+    };
+  });
 
   Object.defineProperty(qz, "__hanaaSecurityConfigured", {
     value: true,
@@ -69,6 +82,8 @@ export function configureQzSecurity(qz) {
     enumerable: false,
     writable: false,
   });
+
+  return true;
 }
 
 export function clearQzPairingToken() {
