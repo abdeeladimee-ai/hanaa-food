@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AdminNavigation from "./components/AdminNavigation";
 import { signOut } from "./auth";
+import { configureQzSecurity } from "./qzSecurity";
 
 import { getOrder, listOrders, subscribeOrders, upsertOrder } from "./ordersApi";
 const branches = [
@@ -159,6 +160,7 @@ const qzEnsureConnected = async () => {
   const qz = await qzLoad();
   if (!qz) throw new Error("QZ Tray n'est pas disponible.");
 
+  configureQzSecurity(qz);
   if (qz.websocket.isActive()) return qz;
 
   if (!qzConnectPromise) {
