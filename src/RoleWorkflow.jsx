@@ -28,6 +28,12 @@ const pickupStatuses = [
   "REFUSÉE PAR LE SNACK",
 ];
 const now = () => new Date().toISOString();
+const DRIVER_LIVE_START_AT = Date.parse("2026-09-19T11:39:42Z");
+
+const isDriverLiveOrder = (order) => {
+  const createdAt = Date.parse(order?.createdAt || "");
+  return Number.isFinite(createdAt) && createdAt >= DRIVER_LIVE_START_AT;
+};
 const labelClass = (status) => status.toLowerCase().replaceAll(" ", "-");
 const notificationAudios = {};
 
@@ -407,6 +413,7 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
 
       return (
         role === "driver" &&
+        isDriverLiveOrder(order) &&
         order.orderType === "delivery" &&
         order.statusLabel === "ACCEPTÉE PAR LE CAISSIER" &&
         !order.driverId
@@ -520,9 +527,13 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
     if (role === "admin") return typed;
     if (role === "snack")
       return typed.filter((order) => order.branchId === branchId);
-    return typed.filter((order) =>
-      (order.statusLabel === "ACCEPTÉE PAR LE CAISSIER" && !order.driverId) ||
-      order.driverId === driverId,
+    return typed.filter(
+      (order) =>
+        isDriverLiveOrder(order) &&
+        (
+          (order.statusLabel === "ACCEPTÉE PAR LE CAISSIER" && !order.driverId) ||
+          order.driverId === driverId
+        ),
     );
   }, [activeOrderType, branchId, driverId, orders, role]);
   const accept = async (order) => {
