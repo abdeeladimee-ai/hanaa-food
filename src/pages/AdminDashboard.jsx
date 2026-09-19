@@ -140,6 +140,30 @@ const isToday = (value) => {
   );
 };
 
+const casablancaDateKey = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Casablanca",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === "year")?.value || "";
+  const month = parts.find((part) => part.type === "month")?.value || "";
+  const day = parts.find((part) => part.type === "day")?.value || "";
+
+  return year && month && day ? `${year}-${month}-${day}` : "";
+};
+
+const driverActivityDate = (order) =>
+  order?.deliveredAt ||
+  order?.driverTakenAt ||
+  order?.inDeliveryAt ||
+  order?.createdAt;
+
 const dh = (value) => `${Math.round(Number(value || 0))} DH`;
 
 const branchNames = {
@@ -151,6 +175,9 @@ const branchNames = {
 export default function AdminDashboard({ onNavigate }) {
   const [orders, setOrders] = useState([]);
   const [staffAccounts, setStaffAccounts] = useState([]);
+  const [selectedHistoryDate, setSelectedHistoryDate] = useState(() =>
+    casablancaDateKey(new Date()),
+  );
   const [branchSettings, setBranchSettings] = useState(readBranches);
   const [savedMessage, setSavedMessage] = useState("");
 
@@ -260,47 +287,65 @@ export default function AdminDashboard({ onNavigate }) {
           total: 0,
           fees: 0,
           cash: 0,
+          orders: [],
         });
       });
 
-    orders.forEach((order) => {
-      if (!order.driverId && !order.driverName) return;
+    orders
+      .filter(
+        (order) =>
+          order.orderType === "delivery" &&
+          casablancaDateKey(driverActivityDate(order)) === selectedHistoryDate,
+      )
+      .forEach((order) => {
+        if (!order.driverId && !order.driverName) return;
 
-      const id = order.driverId || order.driverName;
-      const item = drivers.get(id) || {
-        id,
-        name: order.driverName || "Livreur",
-        delivered: 0,
-        active: 0,
-        total: 0,
-        fees: 0,
-        cash: 0,
-      };
+        const id = order.driverId || order.driverName;
+        const item = drivers.get(id) || {
+          id,
+          name: order.driverName || "Livreur",
+          delivered: 0,
+          active: 0,
+          total: 0,
+          fees: 0,
+          cash: 0,
+          orders: [],
+        };
 
-      if (order.statusLabel === "LIVRÉE") {
-        item.delivered += 1;
-        item.total += Number(order.total || 0);
-        item.fees += Number(order.deliveryFee || 0);
-        item.cash +=
-          order.paymentMethod === "Carte" ? 0 : Number(order.total || 0);
-      }
+        item.orders.push(order);
 
-      if (
-        ["PRISE PAR LE LIVREUR", "EN LIVRAISON"].includes(order.statusLabel)
-      ) {
-        item.active += 1;
-      }
+        if (order.statusLabel === "LIVRÉE") {
+          item.delivered += 1;
+          item.total += Number(order.total || 0);
+          item.fees += Number(order.deliveryFee || 0);
+          item.cash +=
+            order.paymentMethod === "Carte" ? 0 : Number(order.total || 0);
+        }
 
-      drivers.set(id, item);
-    });
+        if (
+          ["PRISE PAR LE LIVREUR", "EN LIVRAISON"].includes(order.statusLabel)
+        ) {
+          item.active += 1;
+        }
 
-    return [...drivers.values()].sort(
-      (a, b) =>
-        b.delivered - a.delivered ||
-        b.active - a.active ||
-        a.name.localeCompare(b.name),
-    );
-  }, [orders, staffAccounts]);
+        drivers.set(id, item);
+      });
+
+    return [...drivers.values()]
+      .map((driver) => ({
+        ...driver,
+        orders: [...driver.orders].sort(
+          (a, b) =>
+            new Date(driverActivityDate(b) || 0) -
+            new Date(driverActivityDate(a) || 0),
+        ),
+      }))
+      .sort(
+        (a, b) =>
+          b.orders.length - a.orders.length ||
+          a.name.localeCompare(b.name),
+      );
+  }, [orders, selectedHistoryDate, staffAccounts]);
 
   const branchStats = useMemo(
     () =>
@@ -330,10 +375,15 @@ export default function AdminDashboard({ onNavigate }) {
 
   const history = useMemo(
     () =>
-      [...orders].sort(
-        (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
-      ),
-    [orders],
+      [...orders]
+        .filter(
+          (order) =>
+            casablancaDateKey(order.createdAt) === selectedHistoryDate,
+        )
+        .sort(
+          (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+        ),
+    [orders, selectedHistoryDate],
   );
 
   const formatOrderDate = (value) => {
@@ -524,7 +574,40 @@ export default function AdminDashboard({ onNavigate }) {
         </div>
       </Box>
 
-      <Box title={`Historique des commandes — ${history.length}`}>
+      <Box title="Historique par jour">
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            alignItems: "end",
+          }}
+        >
+          <label style={s.fieldLabel}>
+            Choisir le jour
+            <input
+              type="date"
+              style={s.numberInput}
+              value={selectedHistoryDate}
+              onChange={(event) => setSelectedHistoryDate(event.target.value)}
+            />
+          </label>
+
+          <button
+            type="button"
+            style={s.button}
+            onClick={() => setSelectedHistoryDate(casablancaDateKey(new Date()))}
+          >
+            Aujourd'hui
+          </button>
+
+          <span style={s.muted}>
+            {history.length} commande{history.length === 1 ? "" : "s"} ce jour
+          </span>
+        </div>
+      </Box>
+
+      <Box title={`Historique des commandes — ${selectedHistoryDate} — ${history.length}`}>
         <div style={s.tableWrap}>
           <table style={s.table}>
             <thead>
@@ -565,42 +648,98 @@ export default function AdminDashboard({ onNavigate }) {
           </table>
         </div>
       </Box>
-      <Box title="Livreurs — historique complet">
+      <Box title={`Livreurs — ${selectedHistoryDate}`}>
         {driverStats.length ? (
-          <div style={s.tableWrap}>
-            <table style={s.table}>
-              <thead>
-                <tr>
-                  <Th>Livreur</Th>
-                  <Th>Livrées total</Th>
-                  <Th>En cours</Th>
-                  <Th>CA historique</Th>
-                  <Th>Frais historique</Th>
-                  <Th>Espèces historique</Th>
-                </tr>
-              </thead>
+          <div style={{ display: "grid", gap: 12 }}>
+            {driverStats.map((driver) => (
+              <details
+                key={driver.id}
+                style={{
+                  border: "1px solid #f0d6d8",
+                  borderRadius: 14,
+                  background: "#fff",
+                  padding: 14,
+                }}
+              >
+                <summary
+                  style={{
+                    cursor: "pointer",
+                    fontWeight: 900,
+                    color: "#351417",
+                  }}
+                >
+                  {driver.name} — {driver.orders.length} commande
+                  {driver.orders.length === 1 ? "" : "s"} — {dh(driver.total)}
+                </summary>
 
-              <tbody>
-                {driverStats.map((driver) => (
-                  <tr key={driver.id}>
-                    <Td>
-                      <b>{driver.name}</b>
-                      <small style={s.id}>{driver.id}</small>
-                    </Td>
-                    <Td>{driver.delivered}</Td>
-                    <Td>{driver.active}</Td>
-                    <Td>{dh(driver.total)}</Td>
-                    <Td>{dh(driver.fees)}</Td>
-                    <Td>
-                      <b>{dh(driver.cash)}</b>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                    gap: 8,
+                    margin: "14px 0",
+                  }}
+                >
+                  <Line name="Livrees" value={driver.delivered} />
+                  <Line name="En cours" value={driver.active} />
+                  <Line name="CA" value={dh(driver.total)} strong />
+                  <Line name="Frais" value={dh(driver.fees)} />
+                  <Line name="Especes" value={dh(driver.cash)} strong />
+                </div>
+
+                {driver.orders.length ? (
+                  <div style={s.tableWrap}>
+                    <table style={s.table}>
+                      <thead>
+                        <tr>
+                          <Th>Heure</Th>
+                          <Th>Commande</Th>
+                          <Th>Client</Th>
+                          <Th>Branche</Th>
+                          <Th>Total</Th>
+                          <Th>Frais</Th>
+                          <Th>Statut</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {driver.orders.map((order) => (
+                          <tr key={order.id}>
+                            <Td>
+                              {new Date(
+                                driverActivityDate(order) || order.createdAt,
+                              ).toLocaleTimeString("fr-FR", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                timeZone: "Africa/Casablanca",
+                              })}
+                            </Td>
+                            <Td>
+                              <b>#{order.id}</b>
+                            </Td>
+                            <Td>{order.customerName || "Client"}</Td>
+                            <Td>
+                              {order.branchName ||
+                                branchNames[order.branchId] ||
+                                "—"}
+                            </Td>
+                            <Td>
+                              <b>{dh(order.total)}</b>
+                            </Td>
+                            <Td>{dh(order.deliveryFee)}</Td>
+                            <Td>{order.statusLabel || "—"}</Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={s.empty}>0 commande f had nhar.</div>
+                )}
+              </details>
+            ))}
           </div>
         ) : (
-          <div style={s.empty}>Aucun historique livreur.</div>
+          <div style={s.empty}>Aucun livreur actif.</div>
         )}
       </Box>
 
