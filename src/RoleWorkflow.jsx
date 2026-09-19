@@ -295,6 +295,12 @@ const qzBuildTicket = (order) => {
     lines.push(ESC + "!" + "\x00");
   }
 
+  if (!isPickup && order.driverName) {
+    lines.push(ESC + "E" + "\x01", ESC + "!" + "\x10");
+    lines.push("LIVREUR: " + qzAscii(order.driverName).toUpperCase() + "\n");
+    lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
+  }
+
   if (!isPickup && order.deliveryAddress) {
     lines.push("ADRESSE: " + qzAscii(order.deliveryAddress) + "\n");
   }
@@ -374,6 +380,42 @@ const printOrderTicketQz = async (order) => {
   await qz.print(config, qzBuildTicket(order));
   return printer;
 };
+
+const printDriverAssignmentSlip = async (order) => {
+  const qz = await qzEnsureConnected();
+  const printer = await qzResolvePrinter(qz);
+  const config = qz.configs.create(printer, { encoding: "CP858" });
+  const ESC = "\x1b";
+  const GS = "\x1d";
+  const driver = qzAscii(order?.driverName || "Livreur").toUpperCase();
+  const orderId = qzAscii(order?.id || "-");
+
+  const data = [
+    ESC + "@",
+    ESC + "a" + "\x01",
+    ESC + "E" + "\x01",
+    "HANAA FOOD\n",
+    qzBranchName(order) + "\n",
+    ESC + "E" + "\x00",
+    "------------------------------------------\n",
+    ESC + "!" + "\x30",
+    "#" + orderId + "\n",
+    ESC + "!" + "\x00",
+    "LIVREUR\n",
+    ESC + "E" + "\x01",
+    ESC + "!" + "\x30",
+    driver + "\n",
+    ESC + "!" + "\x00",
+    ESC + "E" + "\x00",
+    "------------------------------------------\n",
+    "REMETTRE CETTE COMMANDE A CE LIVREUR\n",
+    "\n\n",
+    GS + "V" + "\x41" + "\x00",
+  ];
+
+  await qz.print(config, data);
+  return printer;
+};
 // HANAA_QZ_INTEGRATION_END
 
 export default function RoleWorkflow({ role, session, onHome, orderType, title, staffBranchId }) {
@@ -388,6 +430,7 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
   const [notification, setNotification] = useState("");
   const audioEnabledRef = useRef(false);
   const knownOrderKeys = useRef(new Set());
+  const knownDriverAssignments = useRef(new Set());
   const hasSyncedOrders = useRef(false);
   const lastOrdersSnapshot = useRef("");
   const driverId = session?.id || null;
@@ -435,11 +478,52 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
           !knownOrderKeys.current.has(notificationKey(order)),
       );
 
+      const assignmentKey = (order) =>
+        `${order.id}:${order.driverId || ""}`;
+
+      const assignedForThisSnack = nextOrders.filter(
+        (order) =>
+          role === "snack" &&
+          order.orderType === "delivery" &&
+          order.branchId === branchId &&
+          order.driverId &&
+          order.driverName,
+      );
+
       if (!hasSyncedOrders.current) {
         nextOrders.forEach((order) =>
           knownOrderKeys.current.add(notificationKey(order)),
         );
-      } else if (unseenRelevantOrders.length) {
+        assignedForThisSnack.forEach((order) =>
+          knownDriverAssignments.current.add(assignmentKey(order)),
+        );
+      } else {
+        assignedForThisSnack.forEach((order) => {
+          const key = assignmentKey(order);
+          if (knownDriverAssignments.current.has(key)) return;
+
+          knownDriverAssignments.current.add(key);
+
+          void printDriverAssignmentSlip(order)
+            .then(() => {
+              if (active) {
+                setNotification(
+                  `LIVREUR ${order.driverName} — COMMANDE #${order.id}`,
+                );
+              }
+            })
+            .catch((error) => {
+              console.error("Driver assignment slip print failed:", error);
+              if (active) {
+                setNotification(
+                  `LIVREUR ${order.driverName} — #${order.id} — TICKET A VERIFIER`,
+                );
+              }
+            });
+        });
+      }
+
+      if (hasSyncedOrders.current && unseenRelevantOrders.length) {
         const newestOrder = unseenRelevantOrders[0];
 
         if (role === "snack") {
