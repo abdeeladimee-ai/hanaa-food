@@ -360,7 +360,11 @@ async function printKitchenOrder(orderId, { required = false } = {}) {
   if (!required && Date.now() < nextRetryAt) return [];
 
   const printedKey = `${PRINTED_PREFIX}${orderId}`;
-  if (localStorage.getItem(printedKey)) return ["already-printed"];
+  if (required) {
+    localStorage.removeItem(printedKey);
+  } else if (localStorage.getItem(printedKey)) {
+    return ["already-printed"];
+  }
 
   inFlight.add(orderId);
 
@@ -451,10 +455,4 @@ function scheduleScan() {
 if (typeof window !== "undefined") {
   window.__hanaaPrintKitchenOrder = (orderId) =>
     printKitchenOrder(orderId, { required: true });
-
-  const observer = new MutationObserver(scheduleScan);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-  window.addEventListener("load", scheduleScan);
-  window.addEventListener("popstate", scheduleScan);
-  setTimeout(scheduleScan, 500);
 }
