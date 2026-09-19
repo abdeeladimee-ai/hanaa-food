@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { refreshStaffAccounts } from "../auth";
 import { listOrders, subscribeOrders } from "../ordersApi";
 const DEFAULT_ZONES = [
   { maxKm: 2, fee: 10 },
@@ -149,6 +150,7 @@ const branchNames = {
 
 export default function AdminDashboard({ onNavigate }) {
   const [orders, setOrders] = useState([]);
+  const [staffAccounts, setStaffAccounts] = useState([]);
   const [branchSettings, setBranchSettings] = useState(readBranches);
   const [savedMessage, setSavedMessage] = useState("");
 
@@ -157,8 +159,18 @@ export default function AdminDashboard({ onNavigate }) {
 
     const load = async () => {
       try {
-        const next = await listOrders();
-        if (active) setOrders(next);
+        const [nextOrders, nextStaff] = await Promise.all([
+          listOrders(),
+          refreshStaffAccounts().catch((error) => {
+            console.error("Admin staff sync failed:", error);
+            return [];
+          }),
+        ]);
+
+        if (active) {
+          setOrders(nextOrders);
+          setStaffAccounts(Array.isArray(nextStaff) ? nextStaff : []);
+        }
       } catch (error) {
         console.error("Admin Supabase sync failed:", error);
       }
@@ -233,6 +245,24 @@ export default function AdminDashboard({ onNavigate }) {
   const driverStats = useMemo(() => {
     const drivers = new Map();
 
+    staffAccounts
+      .filter(
+        (account) =>
+          account.role === "LIVREUR" &&
+          account.active !== false,
+      )
+      .forEach((account) => {
+        drivers.set(account.id, {
+          id: account.id,
+          name: account.name || "Livreur",
+          delivered: 0,
+          active: 0,
+          total: 0,
+          fees: 0,
+          cash: 0,
+        });
+      });
+
     orders.forEach((order) => {
       if (!order.driverId && !order.driverName) return;
 
@@ -267,8 +297,13 @@ export default function AdminDashboard({ onNavigate }) {
       drivers.set(id, item);
     });
 
-    return [...drivers.values()].sort((a, b) => b.delivered - a.delivered);
-  }, [orders]);
+    return [...drivers.values()].sort(
+      (a, b) =>
+        b.delivered - a.delivered ||
+        b.active - a.active ||
+        a.name.localeCompare(b.name),
+    );
+  }, [orders, staffAccounts]);
 
   const branchStats = useMemo(
     () =>
