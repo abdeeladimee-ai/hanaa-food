@@ -121,6 +121,40 @@ function detailText(value) {
   return String(value);
 }
 
+
+const BRANCH_NAMES = {
+  tadart: "HANAA FOOD TADART",
+  amgala: "HANAA FOOD AMGALA",
+  "rue-baghdad": "HANAA FOOD BAGHDAD",
+};
+
+function branchName(order) {
+  const id = String(order?.branchId || "").trim().toLowerCase();
+  return clean(order?.branchName || BRANCH_NAMES[id] || "HANAA FOOD").toUpperCase();
+}
+
+function ticketTime(order) {
+  const raw = order?.cashierAcceptedAt || order?.createdAt || Date.now();
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
+function pairLine(left, right, width = 42) {
+  const a = clean(left);
+  const b = clean(right);
+  const room = Math.max(1, width - b.length);
+  const trimmed = a.slice(0, room - 1);
+  return trimmed + " ".repeat(Math.max(1, width - trimmed.length - b.length)) + b + "\n";
+}
+
 function itemDetails(item) {
   const candidates = [
     ["Taille", item.selectedSize ?? item.size],
@@ -147,45 +181,60 @@ function buildTicket(order) {
   const lines = [];
   const isPickup = order.orderType === "pickup";
   const separator = "------------------------------------------\n";
+  const typeLabel = isPickup ? "A EMPORTER" : "LIVRAISON";
 
-  lines.push(ESC + "@", ESC + "a" + "\x01", ESC + "E" + "\x01");
-  lines.push("HANAA FOOD\n");
-  lines.push(ESC + "E" + "\x00");
-  if (order.branchName) lines.push(clean(order.branchName) + "\n");
-  lines.push(`${isPickup ? "A EMPORTER" : "LIVRAISON"}\n`);
-  lines.push(`COMMANDE #${clean(order.id)}\n`);
-  lines.push(`${new Date(order.createdAt || Date.now()).toLocaleString("fr-FR")}\n`);
+  lines.push(ESC + "@", ESC + "a" + "\x01");
+  lines.push(ESC + "E" + "\x01", "HANAA FOOD\n", ESC + "E" + "\x00");
+  lines.push(branchName(order) + "\n");
   lines.push(separator);
-  lines.push(ESC + "a" + "\x00");
+  lines.push(ESC + "!" + "\x30", "#" + clean(order.id) + "\n", ESC + "!" + "\x00");
+  lines.push(ESC + "E" + "\x01", typeLabel + "\n", ESC + "E" + "\x00");
+  lines.push(ticketTime(order) + "\n");
+  lines.push(separator, ESC + "a" + "\x00");
 
-  if (order.customerName) lines.push(`CLIENT: ${clean(order.customerName)}\n`);
-  if (order.customerPhone) lines.push(`TEL: ${clean(order.customerPhone)}\n`);
-  if (!isPickup && order.deliveryAddress) lines.push(`ADRESSE: ${clean(order.deliveryAddress)}\n`);
-  if (!isPickup && order.distanceKm != null) lines.push(`DISTANCE: ${money(order.distanceKm)} KM\n`);
-
-  lines.push(separator);
-  lines.push(ESC + "E" + "\x01", "ARTICLES\n", ESC + "E" + "\x00");
-
-  (order.items || []).forEach((item) => {
-    const qty = Number(item.quantity || 1);
-    const name = clean(item.name || item.title || "Article");
-    const lineTotal = Number(item.price || 0) * qty;
-    lines.push(`${qty} x ${name}`);
-    if (lineTotal) lines.push(`  ${money(lineTotal)} DH`);
-    lines.push("\n");
-    itemDetails(item).forEach((detail) => lines.push(`  - ${clean(detail)}\n`));
-  });
+  if (order.customerName) lines.push("CLIENT: " + clean(order.customerName) + "\n");
+  if (order.customerPhone) lines.push("TEL: " + clean(order.customerPhone) + "\n");
+  if (!isPickup && order.deliveryAddress) lines.push("ADRESSE: " + clean(order.deliveryAddress) + "\n");
+  if (!isPickup && order.distanceKm != null) lines.push("DISTANCE: " + money(order.distanceKm) + " KM\n");
 
   lines.push(separator);
-  if (order.subtotal != null) lines.push(`SOUS-TOTAL: ${money(order.subtotal)} DH\n`);
-  if (!isPickup) lines.push(`LIVRAISON: ${money(order.deliveryFee)} DH\n`);
-  lines.push(ESC + "E" + "\x01");
-  lines.push(`TOTAL: ${money(order.total)} DH\n`);
-  lines.push(ESC + "E" + "\x00");
-  lines.push(`PAIEMENT: ${clean(order.paymentMethod || "A la livraison")}\n`);
-  if (order.notes || order.note) lines.push(`NOTE: ${clean(order.notes || order.note)}\n`);
+  lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", "DETAIL COMMANDE\n", ESC + "E" + "\x00", ESC + "a" + "\x00");
+
+  const items = Array.isArray(order.items) ? order.items : [];
+  if (!items.length) {
+    lines.push("Commande\n");
+  } else {
+    items.forEach((item, index) => {
+      const qty = Number(item.quantity || 1);
+      const name = clean(item.name || item.title || "Article");
+      const lineTotal = Number(item.price || 0) * qty;
+
+      lines.push(ESC + "E" + "\x01");
+      lines.push(pairLine(qty + " x " + name, lineTotal ? money(lineTotal) + " DH" : ""));
+      lines.push(ESC + "E" + "\x00");
+      itemDetails(item).forEach((detail) => lines.push("  > " + clean(detail) + "\n"));
+      if (index < items.length - 1) lines.push("\n");
+    });
+  }
+
   lines.push(separator);
-  lines.push(ESC + "a" + "\x01", "MERCI ET BON APPETIT\n", "\n\n\n");
+  if (order.subtotal != null) lines.push(pairLine("SOUS-TOTAL", money(order.subtotal) + " DH"));
+  if (!isPickup) lines.push(pairLine("LIVRAISON", money(order.deliveryFee || 0) + " DH"));
+
+  lines.push(separator);
+  lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", ESC + "!" + "\x10");
+  lines.push("TOTAL " + money(order.total) + " DH\n");
+  lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00", ESC + "a" + "\x00");
+  lines.push("PAIEMENT: " + clean(order.paymentMethod || "A LA LIVRAISON") + "\n");
+
+  if (order.notes || order.note) {
+    lines.push(separator, ESC + "E" + "\x01");
+    lines.push("NOTE: " + clean(order.notes || order.note) + "\n");
+    lines.push(ESC + "E" + "\x00");
+  }
+
+  lines.push(separator);
+  lines.push(ESC + "a" + "\x01", "MERCI POUR VOTRE COMMANDE\n", "BON APPETIT\n", "\n\n\n");
   lines.push(GS + "V" + "\x41" + "\x00");
 
   return lines;

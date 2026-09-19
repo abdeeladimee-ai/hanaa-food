@@ -82,6 +82,32 @@ function clean(value) {
     .trim();
 }
 
+
+const BRANCH_NAMES = {
+  tadart: "HANAA FOOD TADART",
+  amgala: "HANAA FOOD AMGALA",
+  "rue-baghdad": "HANAA FOOD BAGHDAD",
+};
+
+function branchName(order) {
+  const id = String(order?.branchId || "").trim().toLowerCase();
+  return clean(order?.branchName || BRANCH_NAMES[id] || "HANAA FOOD").toUpperCase();
+}
+
+function kitchenTime(order) {
+  const raw = order?.cashierAcceptedAt || order?.createdAt || Date.now();
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
 function detailText(value) {
   if (value == null || value === "" || value === false) return "";
   if (Array.isArray(value)) {
@@ -260,18 +286,20 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
   const GS = "\x1D";
   const separator = "------------------------------------------\n";
   const lines = [ESC + "@", ESC + "a" + "\x01"];
+  const typeLabel = order.orderType === "pickup" ? "A EMPORTER" : "LIVRAISON";
 
-  lines.push(ESC + "!" + "\x30", "CUISINE\n", ESC + "!" + "\x00");
+  lines.push(ESC + "E" + "\x01", "HANAA FOOD - CUISINE\n", ESC + "E" + "\x00");
+  lines.push(branchName(order) + "\n");
+
   if (stationLabel) {
-    lines.push(ESC + "E" + "\x01", `${clean(stationLabel)}\n`, ESC + "E" + "\x00");
+    lines.push(ESC + "E" + "\x01", "[" + clean(stationLabel).toUpperCase() + "]\n", ESC + "E" + "\x00");
   }
-  lines.push("HANAA FOOD\n");
-  if (order.branchName) lines.push(`${clean(order.branchName)}\n`);
+
   lines.push(separator);
-  lines.push(ESC + "!" + "\x30", `#${clean(order.id)}\n`, ESC + "!" + "\x00");
-  lines.push(`${order.orderType === "pickup" ? "A EMPORTER" : "LIVRAISON"}\n`);
-  lines.push(`${new Date(order.createdAt || Date.now()).toLocaleString("fr-FR")}\n`);
-  lines.push(separator, ESC + "a" + "\x00", "\n");
+  lines.push(ESC + "!" + "\x30", "#" + clean(order.id) + "\n", ESC + "!" + "\x00");
+  lines.push(ESC + "E" + "\x01", typeLabel + "\n", ESC + "E" + "\x00");
+  lines.push(kitchenTime(order) + "\n");
+  lines.push(separator, ESC + "a" + "\x00");
 
   const items = Array.isArray(ticketItems)
     ? ticketItems
@@ -281,10 +309,10 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
   const groups = groupItemsByCategory(items);
 
   groups.forEach(([category, categoryItems], groupIndex) => {
-    if (groupIndex > 0) lines.push(separator, "\n");
+    if (groupIndex > 0) lines.push(separator);
 
     lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01");
-    lines.push(`--- ${clean(category)} ---\n`);
+    lines.push("*** " + clean(category) + " ***\n");
     lines.push(ESC + "E" + "\x00", ESC + "a" + "\x00", "\n");
 
     categoryItems.forEach((item, itemIndex) => {
@@ -292,31 +320,28 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
       const name = clean(item.name || item.title || "Produit");
 
       lines.push(ESC + "E" + "\x01", ESC + "!" + "\x10");
-      lines.push(`${qty} X ${name}\n`);
+      lines.push(qty + " X " + name + "\n");
       lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
 
       const details = itemDetails(item);
-      if (details.length) {
-        lines.push("\n");
-        details.forEach((detail) => lines.push(`  ${clean(detail)}\n`));
-      }
+      details.forEach((detail) => {
+        lines.push("   > " + clean(detail) + "\n");
+      });
 
-      if (itemIndex < categoryItems.length - 1) {
-        lines.push("\n\n");
-      } else {
-        lines.push("\n");
-      }
+      if (itemIndex < categoryItems.length - 1) lines.push("\n");
     });
   });
 
   if (order.notes || order.note) {
-    lines.push(separator, "\n");
-    lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", "NOTE CUISINE\n");
-    lines.push(ESC + "E" + "\x00", ESC + "a" + "\x00");
-    lines.push(`${clean(order.notes || order.note)}\n\n`);
+    lines.push(separator);
+    lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", ESC + "!" + "\x10");
+    lines.push("NOTE CUISINE\n");
+    lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00", ESC + "a" + "\x00");
+    lines.push(ESC + "E" + "\x01", clean(order.notes || order.note) + "\n", ESC + "E" + "\x00");
   }
 
-  lines.push(separator, ESC + "a" + "\x01", "BONNE PREPARATION\n", "\n\n\n");
+  lines.push(separator);
+  lines.push(ESC + "a" + "\x01", "--------------------\n", "A PREPARER\n", "--------------------\n", "\n\n\n");
   lines.push(GS + "V" + "\x41" + "\x00");
   return lines;
 }

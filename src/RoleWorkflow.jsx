@@ -104,6 +104,40 @@ const qzDetailText = (value) => {
   return String(value);
 };
 
+
+const QZ_BRANCH_NAMES = {
+  tadart: "HANAA FOOD TADART",
+  amgala: "HANAA FOOD AMGALA",
+  "rue-baghdad": "HANAA FOOD BAGHDAD",
+};
+
+const qzBranchName = (order) => {
+  const id = String(order?.branchId || "").trim().toLowerCase();
+  return qzAscii(order?.branchName || QZ_BRANCH_NAMES[id] || "HANAA FOOD").toUpperCase();
+};
+
+const qzTicketTime = (order) => {
+  const raw = order?.cashierAcceptedAt || order?.createdAt || Date.now();
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+};
+
+const qzPairLine = (left, right, width = 42) => {
+  const a = qzAscii(left);
+  const b = qzAscii(right);
+  const room = Math.max(1, width - b.length);
+  const trimmed = a.slice(0, room - 1);
+  return trimmed + " ".repeat(Math.max(1, width - trimmed.length - b.length)) + b + "\n";
+};
+
 const qzItemDetails = (item) => {
   const candidates = [
     ["Taille", item.selectedSize ?? item.size],
@@ -225,69 +259,80 @@ const qzBuildTicket = (order) => {
   const GS = "\x1d";
   const lines = [];
   const separator = "------------------------------------------\n";
+  const isPickup = order.orderType === "pickup";
+  const typeLabel = isPickup ? "A EMPORTER" : "LIVRAISON";
 
   lines.push(ESC + "@");
   lines.push(ESC + "a" + "\x01");
-  lines.push(ESC + "!" + "\x30");
-  lines.push("HANAA FOOD\n");
-  lines.push(ESC + "!" + "\x00");
-  if (order.branchName) lines.push(qzAscii(order.branchName) + "\n");
+  lines.push(ESC + "E" + "\x01", "HANAA FOOD\n", ESC + "E" + "\x00");
+  lines.push(qzBranchName(order) + "\n");
+  lines.push(separator);
+  lines.push(ESC + "!" + "\x30", "#" + qzAscii(order.id || "-") + "\n", ESC + "!" + "\x00");
+  lines.push(ESC + "E" + "\x01", typeLabel + "\n", ESC + "E" + "\x00");
+  lines.push(qzTicketTime(order) + "\n");
   lines.push(separator);
 
   lines.push(ESC + "a" + "\x00");
-  lines.push(`COMMANDE: ${qzAscii(order.id || "-")}\n`);
-  lines.push(`TYPE: ${order.orderType === "pickup" ? "A EMPORTER" : "LIVRAISON"}\n`);
-  lines.push(`DATE: ${new Date(order.createdAt || Date.now()).toLocaleString("fr-FR")}\n`);
-  lines.push(separator);
-
-  if (order.customerName) lines.push(`CLIENT: ${qzAscii(order.customerName)}\n`);
-  if (order.customerPhone) lines.push(`TEL: ${qzAscii(order.customerPhone)}\n`);
-  if (order.deliveryAddress) lines.push(`ADRESSE: ${qzAscii(order.deliveryAddress)}\n`);
-  if (order.distanceKm != null && order.orderType !== "pickup") {
-    lines.push(`DISTANCE: ${qzMoney(order.distanceKm)} KM\n`);
+  if (order.customerName) lines.push("CLIENT: " + qzAscii(order.customerName) + "\n");
+  if (order.customerPhone) lines.push("TEL: " + qzAscii(order.customerPhone) + "\n");
+  if (!isPickup && order.deliveryAddress) {
+    lines.push("ADRESSE: " + qzAscii(order.deliveryAddress) + "\n");
   }
-  if (order.customerName || order.customerPhone || order.deliveryAddress) lines.push(separator);
+  if (!isPickup && order.distanceKm != null) {
+    lines.push("DISTANCE: " + qzMoney(order.distanceKm) + " KM\n");
+  }
+  if (order.customerName || order.customerPhone || (!isPickup && order.deliveryAddress)) {
+    lines.push(separator);
+  }
 
-  lines.push(ESC + "E" + "\x01");
-  lines.push("ARTICLES\n");
-  lines.push(ESC + "E" + "\x00");
+  lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", "DETAIL COMMANDE\n", ESC + "E" + "\x00", ESC + "a" + "\x00");
 
   const items = Array.isArray(order.items) ? order.items : [];
   if (!items.length) {
     lines.push("Commande\n");
   } else {
-    items.forEach((item) => {
+    items.forEach((item, index) => {
       const qty = Number(item.quantity || 1);
       const name = qzAscii(item.name || item.title || "Produit");
       const unit = Number(item.price || 0);
       const lineTotal = unit * qty;
 
-      lines.push(`${qty} x ${name}`);
-      if (unit) lines.push(`  ${qzMoney(lineTotal)} DH`);
-      lines.push("\n");
+      lines.push(ESC + "E" + "\x01");
+      lines.push(qzPairLine(qty + " x " + name, unit ? qzMoney(lineTotal) + " DH" : ""));
+      lines.push(ESC + "E" + "\x00");
 
       qzItemDetails(item).forEach((detail) => {
-        lines.push(`  - ${qzAscii(detail)}\n`);
+        lines.push("  > " + qzAscii(detail) + "\n");
       });
+
+      if (index < items.length - 1) lines.push("\n");
     });
   }
 
   lines.push(separator);
-  if (order.subtotal != null) lines.push(`SOUS-TOTAL: ${qzMoney(order.subtotal)} DH\n`);
-  if (order.deliveryFee != null && order.orderType !== "pickup") {
-    lines.push(`LIVRAISON: ${qzMoney(order.deliveryFee)} DH\n`);
+  if (order.subtotal != null) {
+    lines.push(qzPairLine("SOUS-TOTAL", qzMoney(order.subtotal) + " DH"));
+  }
+  if (!isPickup) {
+    lines.push(qzPairLine("LIVRAISON", qzMoney(order.deliveryFee || 0) + " DH"));
   }
 
-  lines.push(ESC + "E" + "\x01");
-  lines.push(`TOTAL: ${qzMoney(order.total)} DH\n`);
-  lines.push(ESC + "E" + "\x00");
+  lines.push(separator);
+  lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", ESC + "!" + "\x10");
+  lines.push("TOTAL " + qzMoney(order.total) + " DH\n");
+  lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00", ESC + "a" + "\x00");
 
-  if (order.paymentMethod) lines.push(`PAIEMENT: ${qzAscii(order.paymentMethod)}\n`);
-  if (order.notes || order.note) lines.push(`NOTE: ${qzAscii(order.notes || order.note)}\n`);
+  lines.push("PAIEMENT: " + qzAscii(order.paymentMethod || "A LA LIVRAISON") + "\n");
+
+  if (order.notes || order.note) {
+    lines.push(separator);
+    lines.push(ESC + "E" + "\x01", "NOTE: " + qzAscii(order.notes || order.note) + "\n", ESC + "E" + "\x00");
+  }
 
   lines.push(separator);
   lines.push(ESC + "a" + "\x01");
-  lines.push("MERCI ET BON APPETIT\n\n\n");
+  lines.push("MERCI POUR VOTRE COMMANDE\n");
+  lines.push("BON APPETIT\n\n\n");
   lines.push(GS + "V" + "\x41" + "\x00");
 
   return lines;
