@@ -187,20 +187,39 @@ function buildTicket(order) {
   lines.push(ESC + "E" + "\x01", "HANAA FOOD\n", ESC + "E" + "\x00");
   lines.push(branchName(order) + "\n");
   lines.push(separator);
-  lines.push(ESC + "!" + "\x30", "#" + clean(order.id) + "\n", ESC + "!" + "\x00");
-  lines.push(ESC + "E" + "\x01", typeLabel + "\n", ESC + "E" + "\x00");
+
+  lines.push(ESC + "!" + "\x30");
+  lines.push("#" + clean(order.id) + "\n");
+  lines.push(typeLabel + "\n");
+  lines.push(ESC + "!" + "\x00");
   lines.push(ticketTime(order) + "\n");
   lines.push(separator, ESC + "a" + "\x00");
 
-  if (order.customerName) lines.push("CLIENT: " + clean(order.customerName) + "\n");
-  if (order.customerPhone) lines.push("TEL: " + clean(order.customerPhone) + "\n");
-  if (!isPickup && order.deliveryAddress) lines.push("ADRESSE: " + clean(order.deliveryAddress) + "\n");
-  if (!isPickup && order.distanceKm != null) lines.push("DISTANCE: " + money(order.distanceKm) + " KM\n");
+  if (order.customerName) {
+    lines.push(ESC + "E" + "\x01", ESC + "!" + "\x10");
+    lines.push("CLIENT: " + clean(order.customerName) + "\n");
+    lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
+  }
+
+  if (order.customerPhone) {
+    lines.push(ESC + "!" + "\x10");
+    lines.push("TEL: " + clean(order.customerPhone) + "\n");
+    lines.push(ESC + "!" + "\x00");
+  }
+
+  if (!isPickup && order.deliveryAddress) {
+    lines.push("ADRESSE: " + clean(order.deliveryAddress) + "\n");
+  }
+
+  if (!isPickup && order.distanceKm != null) {
+    lines.push("DISTANCE: " + money(order.distanceKm) + " KM\n");
+  }
 
   lines.push(separator);
   lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", "DETAIL COMMANDE\n", ESC + "E" + "\x00", ESC + "a" + "\x00");
 
   const items = Array.isArray(order.items) ? order.items : [];
+
   if (!items.length) {
     lines.push("Commande\n");
   } else {
@@ -209,26 +228,42 @@ function buildTicket(order) {
       const name = clean(item.name || item.title || "Article");
       const lineTotal = Number(item.price || 0) * qty;
 
-      lines.push(ESC + "E" + "\x01");
-      lines.push(pairLine(qty + " x " + name, lineTotal ? money(lineTotal) + " DH" : ""));
-      lines.push(ESC + "E" + "\x00");
-      itemDetails(item).forEach((detail) => lines.push("  > " + clean(detail) + "\n"));
+      lines.push(ESC + "E" + "\x01", ESC + "!" + "\x10");
+      lines.push(qty + " X " + name + "\n");
+      lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
+
+      if (lineTotal) lines.push("    " + money(lineTotal) + " DH\n");
+
+      itemDetails(item).forEach((detail) => {
+        lines.push("  > " + clean(detail) + "\n");
+      });
+
       if (index < items.length - 1) lines.push("\n");
     });
   }
 
   lines.push(separator);
-  if (order.subtotal != null) lines.push(pairLine("SOUS-TOTAL", money(order.subtotal) + " DH"));
-  if (!isPickup) lines.push(pairLine("LIVRAISON", money(order.deliveryFee || 0) + " DH"));
+
+  if (order.subtotal != null) {
+    lines.push(pairLine("SOUS-TOTAL", money(order.subtotal) + " DH"));
+  }
+
+  if (!isPickup) {
+    lines.push(pairLine("LIVRAISON", money(order.deliveryFee || 0) + " DH"));
+  }
 
   lines.push(separator);
-  lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", ESC + "!" + "\x10");
-  lines.push("TOTAL " + money(order.total) + " DH\n");
-  lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00", ESC + "a" + "\x00");
+  lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", ESC + "!" + "\x30");
+  lines.push("TOTAL\n");
+  lines.push(money(order.total) + " DH\n");
+  lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
+
+  lines.push(ESC + "!" + "\x10");
   lines.push("PAIEMENT: " + clean(order.paymentMethod || "A LA LIVRAISON") + "\n");
+  lines.push(ESC + "!" + "\x00");
 
   if (order.notes || order.note) {
-    lines.push(separator, ESC + "E" + "\x01");
+    lines.push(separator, ESC + "a" + "\x00", ESC + "E" + "\x01");
     lines.push("NOTE: " + clean(order.notes || order.note) + "\n");
     lines.push(ESC + "E" + "\x00");
   }

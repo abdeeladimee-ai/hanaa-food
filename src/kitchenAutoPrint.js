@@ -292,13 +292,18 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
   lines.push(branchName(order) + "\n");
 
   if (stationLabel) {
-    lines.push(ESC + "E" + "\x01", "[" + clean(stationLabel).toUpperCase() + "]\n", ESC + "E" + "\x00");
+    lines.push(ESC + "E" + "\x01");
+    lines.push("[" + clean(stationLabel).toUpperCase() + "]\n");
+    lines.push(ESC + "E" + "\x00");
   }
 
   lines.push(separator);
-  lines.push(ESC + "!" + "\x30", "#" + clean(order.id) + "\n", ESC + "!" + "\x00");
-  lines.push(ESC + "E" + "\x01", typeLabel + "\n", ESC + "E" + "\x00");
+
+  lines.push(ESC + "!" + "\x10", ESC + "E" + "\x01");
+  lines.push("#" + clean(order.id) + "  -  " + typeLabel + "\n");
+  lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
   lines.push(kitchenTime(order) + "\n");
+
   lines.push(separator, ESC + "a" + "\x00");
 
   const items = Array.isArray(ticketItems)
@@ -306,6 +311,7 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
     : Array.isArray(order.items)
       ? order.items
       : [];
+
   const groups = groupItemsByCategory(items);
 
   groups.forEach(([category, categoryItems], groupIndex) => {
@@ -323,8 +329,7 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
       lines.push(qty + " X " + name + "\n");
       lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00");
 
-      const details = itemDetails(item);
-      details.forEach((detail) => {
+      itemDetails(item).forEach((detail) => {
         lines.push("   > " + clean(detail) + "\n");
       });
 
@@ -334,15 +339,21 @@ function buildKitchenTicket(order, ticketItems = null, stationLabel = "") {
 
   if (order.notes || order.note) {
     lines.push(separator);
-    lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01", ESC + "!" + "\x10");
+    lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01");
     lines.push("NOTE CUISINE\n");
-    lines.push(ESC + "!" + "\x00", ESC + "E" + "\x00", ESC + "a" + "\x00");
-    lines.push(ESC + "E" + "\x01", clean(order.notes || order.note) + "\n", ESC + "E" + "\x00");
+    lines.push(ESC + "E" + "\x00", ESC + "a" + "\x00");
+    lines.push(ESC + "!" + "\x10");
+    lines.push(clean(order.notes || order.note) + "\n");
+    lines.push(ESC + "!" + "\x00");
   }
 
   lines.push(separator);
-  lines.push(ESC + "a" + "\x01", "--------------------\n", "A PREPARER\n", "--------------------\n", "\n\n\n");
+  lines.push(ESC + "a" + "\x01", ESC + "E" + "\x01");
+  lines.push("A PREPARER\n");
+  lines.push(ESC + "E" + "\x00");
+  lines.push("\n\n\n");
   lines.push(GS + "V" + "\x41" + "\x00");
+
   return lines;
 }
 
