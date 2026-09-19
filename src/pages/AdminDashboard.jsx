@@ -296,15 +296,26 @@ export default function AdminDashboard({ onNavigate }) {
     [todayOrders],
   );
 
-  const latest = useMemo(
+  const history = useMemo(
     () =>
-      [...orders]
-        .sort(
-          (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
-        )
-        .slice(0, 8),
+      [...orders].sort(
+        (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+      ),
     [orders],
   );
+
+  const formatOrderDate = (value) => {
+    const date = new Date(value || 0);
+    if (Number.isNaN(date.getTime())) return "—";
+
+    return date.toLocaleString("fr-FR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   const updateBranch = (branchId, patch) => {
     setBranchSettings((current) =>
@@ -481,11 +492,12 @@ export default function AdminDashboard({ onNavigate }) {
         </div>
       </Box>
 
-      <Box title="Dernières commandes">
+      <Box title={`Historique des commandes — ${history.length}`}>
         <div style={s.tableWrap}>
           <table style={s.table}>
             <thead>
               <tr>
+                <Th>Date</Th>
                 <Th>Commande</Th>
                 <Th>Type</Th>
                 <Th>Branche</Th>
@@ -497,8 +509,9 @@ export default function AdminDashboard({ onNavigate }) {
             </thead>
 
             <tbody>
-              {latest.map((order) => (
+              {history.map((order) => (
                 <tr key={order.id}>
+                  <Td>{formatOrderDate(order.createdAt)}</Td>
                   <Td>
                     <b>#{order.id}</b>
                   </Td>
