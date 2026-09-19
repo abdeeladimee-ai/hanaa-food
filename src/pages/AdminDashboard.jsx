@@ -277,10 +277,7 @@ export default function AdminDashboard({ onNavigate }) {
         cash: 0,
       };
 
-      if (
-        order.statusLabel === "LIVRÉE" &&
-        isToday(order.deliveredAt || order.createdAt)
-      ) {
+      if (order.statusLabel === "LIVRÉE") {
         item.delivered += 1;
         item.total += Number(order.total || 0);
         item.fees += Number(order.deliveryFee || 0);
@@ -568,18 +565,18 @@ export default function AdminDashboard({ onNavigate }) {
           </table>
         </div>
       </Box>
-      <Box title="Livreurs — aujourd’hui">
+      <Box title="Livreurs — historique complet">
         {driverStats.length ? (
           <div style={s.tableWrap}>
             <table style={s.table}>
               <thead>
                 <tr>
                   <Th>Livreur</Th>
-                  <Th>Livrées</Th>
+                  <Th>Livrées total</Th>
                   <Th>En cours</Th>
-                  <Th>Total commandes</Th>
-                  <Th>Frais</Th>
-                  <Th>Espèces en main</Th>
+                  <Th>CA historique</Th>
+                  <Th>Frais historique</Th>
+                  <Th>Espèces historique</Th>
                 </tr>
               </thead>
 
@@ -603,7 +600,7 @@ export default function AdminDashboard({ onNavigate }) {
             </table>
           </div>
         ) : (
-          <div style={s.empty}>Aucune activité livreur aujourd’hui.</div>
+          <div style={s.empty}>Aucun historique livreur.</div>
         )}
       </Box>
 
