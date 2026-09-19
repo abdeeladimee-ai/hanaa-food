@@ -250,7 +250,10 @@ export default function AdminDashboard({ onNavigate }) {
 
   const cashDrivers = deliveredToday.reduce(
     (sum, order) =>
-      sum + (order.paymentMethod === "Carte" ? 0 : Number(order.total || 0)),
+      sum +
+      (order.paymentMethod === "Carte" || order.driverSettledAt
+        ? 0
+        : Number(order.total || 0)),
     0,
   );
 
@@ -319,7 +322,9 @@ export default function AdminDashboard({ onNavigate }) {
           item.total += Number(order.total || 0);
           item.fees += Number(order.deliveryFee || 0);
           item.cash +=
-            order.paymentMethod === "Carte" ? 0 : Number(order.total || 0);
+            order.paymentMethod === "Carte" || order.driverSettledAt
+              ? 0
+              : Number(order.total || 0);
         }
 
         if (
@@ -684,7 +689,7 @@ export default function AdminDashboard({ onNavigate }) {
                   <Line name="En cours" value={driver.active} />
                   <Line name="CA" value={dh(driver.total)} strong />
                   <Line name="Frais" value={dh(driver.fees)} />
-                  <Line name="Especes" value={dh(driver.cash)} strong />
+                  <Line name="Especes chez livreur" value={dh(driver.cash)} strong />
                 </div>
 
                 {driver.orders.length ? (

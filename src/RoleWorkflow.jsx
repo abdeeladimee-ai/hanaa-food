@@ -604,6 +604,36 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
       ],
     }));
 
+  const settleDriver = async (order) => {
+    if (!order?.driverId || !order?.driverName) {
+      window.alert("Had commande ma fihach livreur enregistré.");
+      return;
+    }
+
+    const amount =
+      order.paymentMethod === "Carte" ? 0 : Number(order.total || 0);
+
+    const ok = window.confirm(
+      `Encaisser ${order.driverName} pour la commande #${order.id} ?\nMontant à remettre à la caisse: ${amount} DH`,
+    );
+
+    if (!ok) return;
+
+    const saved = await updateOrder(order.id, (current) => ({
+      ...current,
+      driverSettled: true,
+      driverSettledAt: now(),
+      driverSettledBy: session?.name || session?.id || "Caissier",
+      driverSettledAmount: amount,
+    }));
+
+    if (saved) {
+      setNotification(
+        `ENCAISSÉ — ${order.driverName} — #${order.id} — ${amount} DH`,
+      );
+    }
+  };
+
   const visibleOrders = useMemo(() => {
     const typed = activeOrderType
       ? orders.filter((order) => order.orderType === activeOrderType)
@@ -915,6 +945,7 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
           driverId={driverId}
           onTake={take}
           onTransition={transition}
+          onSettleDriver={settleDriver}
           onOpen={(order) => setSelectedOrder(order)}
         />
       ) : (
@@ -970,6 +1001,7 @@ function StatusSections({
   onAccept,
   onRefuse,
   onTransition,
+  onSettleDriver,
   onOpen,
 }) {
   const grouped = (orderType === "pickup" ? pickupStatuses : statuses).map(
@@ -1004,6 +1036,7 @@ function StatusSections({
                 onAccept={onAccept}
                 onRefuse={() => onRefuse(order)}
                 onTransition={onTransition}
+                onSettleDriver={() => onSettleDriver(order)}
                 onOpen={() => onOpen(order)}
               />
             ))
@@ -1024,6 +1057,7 @@ function OrderCard({
   onRefuse,
   onTake,
   onTransition,
+  onSettleDriver,
   onOpen,
 }) {
   const isPickup = order.orderType === "pickup";
@@ -1049,6 +1083,15 @@ function OrderCard({
   const canPickup =
     role === "snack" && isPickup && order.statusLabel === "PRÊTE";
   const canStart = role === "snack" && isPickup && order.statusLabel === "VALIDÉE PAR LE SNACK";
+  const isDeliveredDelivery =
+    role === "snack" &&
+    !isPickup &&
+    order.statusLabel === "LIVRÉE";
+  const canSettleDriver =
+    isDeliveredDelivery &&
+    order.driverId &&
+    order.driverName &&
+    !order.driverSettledAt;
   return (
     <article className="workflow-card">
       <div className="workflow-card-top">
@@ -1080,10 +1123,32 @@ function OrderCard({
           )}
         </div>
       </div>
-      {order.driverName && (
+      {order.driverName ? (
         <p className="workflow-assignment">
           Livreur: <b>{order.driverName}</b>
+          {isDeliveredDelivery && (
+            <>
+              {" · "}
+              {order.driverSettledAt ? (
+                <b>
+                  ENCAISSÉ ✓{" "}
+                  {Number(order.driverSettledAmount ?? (order.paymentMethod === "Carte" ? 0 : order.total || 0))} DH
+                </b>
+              ) : (
+                <b>
+                  À ENCAISSER:{" "}
+                  {order.paymentMethod === "Carte" ? 0 : Number(order.total || 0)} DH
+                </b>
+              )}
+            </>
+          )}
         </p>
+      ) : (
+        isDeliveredDelivery && (
+          <p className="workflow-assignment">
+            <b>Livreur non enregistré</b>
+          </p>
+        )
       )}
       {isAssignedDriver && (
         <section className="driver-payment-summary">
@@ -1187,6 +1252,19 @@ function OrderCard({
               <option key={status}>{status}</option>
             ))}
           </select>
+        )}
+        {canSettleDriver && (
+          <button
+            type="button"
+            className="workflow-accept"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onSettleDriver();
+            }}
+          >
+            ENCAISSER LIVREUR
+          </button>
         )}
         <button className="workflow-details" onClick={onOpen}>
           Voir le détail
