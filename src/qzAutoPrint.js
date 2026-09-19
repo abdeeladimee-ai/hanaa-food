@@ -1,4 +1,5 @@
 import { getOrder } from "./ordersApi";
+import { configureQzSecurity } from "./qzSecurity";
 
 const QZ_SCRIPT_URL = "/qz-tray.js";
 const SESSION_KEY = "hanaa-auth-session";
@@ -62,6 +63,7 @@ async function getQz() {
   const qz = await loadQz();
   if (!qz) throw new Error("QZ Tray n'est pas disponible.");
 
+  configureQzSecurity(qz);
   if (qz.websocket.isActive()) return qz;
   if (!connectPromise) {
     connectPromise = qz.websocket
