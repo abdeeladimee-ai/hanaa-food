@@ -227,11 +227,9 @@ const extrasByCategory = {
 };
 const pastaVariants = ["Penne", "Spaghetti", "Tagliatelle"];
 const accompaniments = [
-  "Pâte sauce champignon",
-  "Pâte sauce blanche",
-  "Riz",
-  "Légumes sautés",
   "Frites",
+  "Pâte sauce blanche",
+  "Pâte sauce champignon",
   "Potatoes",
 ];
 const rawProducts = [
@@ -650,6 +648,20 @@ const sauceOptions = [
 const requiresSauce = (product) =>
   Boolean(product && sauceCategories.has(product.categoryId));
 
+const baghdadRuptureCategories = new Set([
+  "plats",
+  "grillades",
+  "salades",
+  "jus",
+]);
+
+const isProductRuptureAtBranch = (product, branch) =>
+  Boolean(
+    product &&
+      branch?.id === "rue-baghdad" &&
+      baghdadRuptureCategories.has(product.categoryId),
+  );
+
 const phoneIsValid = (value) =>
   /^(0[67]\d{8}|\+212[67]\d{8})$/.test(value.replace(/[ .-]/g, ""));
 function feeFor(branch, distance, subtotal) {
@@ -880,6 +892,11 @@ function App() {
     });
   }, [category, query]);
   const add = (product, options = {}) => {
+    if (isProductRuptureAtBranch(product, branch)) {
+      window.alert("Had produit RUPTURE f Hanaa Food Rue Baghdad.");
+      return;
+    }
+
     const chosen = options.extras || [];
     const sauce = options.sauce || "";
     const price =
@@ -922,6 +939,18 @@ function App() {
         .filter((item) => item.quantity > 0),
     );
   const place = async (details) => {
+    const unavailableItems = cart.filter((cartItem) => {
+      const product = products.find((item) => item.id === cartItem.productId);
+      return isProductRuptureAtBranch(product, branch);
+    });
+
+    if (unavailableItems.length) {
+      window.alert(
+        "Kayna chi produits RUPTURE f Hanaa Food Rue Baghdad. 7yedhom mn panier w 3awed jarrab.",
+      );
+      return;
+    }
+
     const next = {
       id: `HF${Math.floor(1000 + Math.random() * 8999)}`,
       customerName: details.name,
@@ -1036,6 +1065,7 @@ function App() {
             addressError={addressError}
             pickupBranchId={pickupBranchId}
             setPickupBranchId={setPickupBranchId}
+            branch={branch}
             query={query}
             setQuery={setQuery}
             category={category}
@@ -1135,6 +1165,7 @@ function App() {
       {view === "favorites" && (
         <Favorites
           favoriteIds={favorites}
+          branch={branch}
           onHome={() => setView("account")}
           onOpen={(product) => setModal(product)}
           onToggleFavorite={toggleFavorite}
@@ -1144,7 +1175,12 @@ function App() {
         <ClientProfile onHome={() => setView("account")} />
       )}
       {modal && (
-        <ProductModal product={modal} add={add} close={() => setModal(null)} />
+        <ProductModal
+          product={modal}
+          unavailable={isProductRuptureAtBranch(modal, branch)}
+          add={add}
+          close={() => setModal(null)}
+        />
       )}
       {cart.length > 0 && view === "home" && (
         <button className="floating-cart" onClick={() => setView("cart")}>
@@ -1253,6 +1289,7 @@ function Home({
               <ProductCard
                 key={product.id}
                 product={product}
+                unavailable={isProductRuptureAtBranch(product, branch)}
                 onAdd={() => setModal(product)}
                 onDetails={() => setModal(product)}
                 favorite={favorites.includes(product.id)}
@@ -1272,6 +1309,7 @@ function Home({
 }
 function ProductCard({
   product,
+  unavailable = false,
   onAdd,
   onDetails,
   favorite = false,
@@ -1309,6 +1347,24 @@ function ProductCard({
       <button className="product-image" data-category={product.categoryId} onClick={onDetails}>
         <img src={product.image} alt={product.name} />
         <span>{product.categoryId}</span>
+        {unavailable && (
+          <b
+            style={{
+              position: "absolute",
+              left: 12,
+              bottom: 12,
+              padding: "7px 10px",
+              borderRadius: 8,
+              background: "#D71920",
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 900,
+              letterSpacing: 0.5,
+            }}
+          >
+            RUPTURE
+          </b>
+        )}
       </button>
       <div className="product-info">
         <button className="product-name" onClick={onDetails}>
@@ -1322,15 +1378,24 @@ function ProductCard({
               <small> à partir de</small>
             )}
           </strong>
-          <button className="add-button" onClick={onAdd}>
-            Ajouter <b>+</b>
+          <button
+            className="add-button"
+            onClick={onAdd}
+            disabled={unavailable}
+            style={
+              unavailable
+                ? { opacity: 0.55, cursor: "not-allowed" }
+                : undefined
+            }
+          >
+            {unavailable ? "Rupture" : <>Ajouter <b>+</b></>}
           </button>
         </div>
       </div>
     </article>
   );
 }
-function ProductModal({ product, close, add }) {
+function ProductModal({ product, unavailable = false, close, add }) {
   const choices =
     product.variants.type === "pasta"
       ? product.variants.choices
@@ -1433,6 +1498,21 @@ function ProductModal({ product, close, add }) {
         <div className="modal-content">
           <span className="eyebrow">{product.categoryId}</span>
           <h2>{product.name}</h2>
+          {unavailable && (
+            <p
+              style={{
+                display: "inline-block",
+                marginTop: 8,
+                padding: "7px 10px",
+                borderRadius: 8,
+                background: "#D71920",
+                color: "#fff",
+                fontWeight: 900,
+              }}
+            >
+              RUPTURE A BAGHDAD
+            </p>
+          )}
           {product.description && <p>{product.description}</p>}
           {needsMainSauce && (
             <div className="option-group main-sauce-first">
@@ -1516,9 +1596,9 @@ function ProductModal({ product, close, add }) {
             </div>
             <button
               className="primary-action"
-              disabled={!extrasValid || !mainSauceValid}
+              disabled={unavailable || !extrasValid || !mainSauceValid}
               onClick={() =>
-                extrasValid && add(product, {
+                !unavailable && extrasValid && add(product, {
                   variant,
                   variantPrice,
                   extras:
@@ -1534,7 +1614,12 @@ function ProductModal({ product, close, add }) {
                 })
               }
             >
-              {extrasValid ? "Ajouter" : "Choisis 2 accompagnements"} <b>{total} DH</b>
+              {unavailable
+                ? "RUPTURE"
+                : extrasValid
+                  ? "Ajouter"
+                  : "Choisis 2 accompagnements"}{" "}
+              <b>{total} DH</b>
             </button>
           </div>
         </div>
@@ -2050,7 +2135,7 @@ function Account({ onHome, onOrders, onFavorites, onProfile }) {
   );
 }
 
-function Favorites({ favoriteIds, onHome, onOpen, onToggleFavorite }) {
+function Favorites({ favoriteIds, branch, onHome, onOpen, onToggleFavorite }) {
   const favoriteProducts = products.filter((product) =>
     favoriteIds.includes(product.id),
   );
@@ -2074,6 +2159,7 @@ function Favorites({ favoriteIds, onHome, onOpen, onToggleFavorite }) {
             <ProductCard
               key={product.id}
               product={product}
+              unavailable={isProductRuptureAtBranch(product, branch)}
               onAdd={() => onOpen(product)}
               onDetails={() => onOpen(product)}
               favorite
