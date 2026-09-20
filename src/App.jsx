@@ -657,7 +657,10 @@ const isProductRuptureAtBranch = (product, branch) =>
   Boolean(
     product &&
       branch?.id === "rue-baghdad" &&
-      baghdadRuptureCategories.has(product.categoryId),
+      (
+        baghdadRuptureCategories.has(product.categoryId) ||
+        (product.categoryId === "plats" && product.name === "Plat Fitnesse")
+      ),
   );
 
 const phoneIsValid = (value) =>
