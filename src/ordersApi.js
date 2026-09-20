@@ -1,8 +1,8 @@
 import { requireSupabase } from "./supabase";
 
 const TABLE = "orders";
-const POLL_INTERVAL_MS = 15000;
-const REALTIME_DEBOUNCE_MS = 250;
+const POLL_INTERVAL_MS = 60000;
+const REALTIME_DEBOUNCE_MS = 3000;
 const STAFF_SESSION_KEY = "hanaa-auth-session";
 const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
 const LEGACY_CLIENT_ORDER_KEY = "hanaa-order";
@@ -214,7 +214,7 @@ export async function listOrders(options = {}) {
       .from(TABLE)
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(staff && branchId ? 500 : 200);
+      .limit(200);
 
     if (staff && branchId) query = query.eq("branch_id", branchId);
     if (!staff) query = query.in("id", clientOrderIds);
@@ -338,6 +338,7 @@ function startSharedOrdersSubscription() {
   }
 
   sharedOrdersPollTimer = window.setInterval(() => {
+    if (document.visibilityState !== "visible") return;
     scheduleOrdersNotification({ type: "poll" });
   }, POLL_INTERVAL_MS);
 }
@@ -405,6 +406,7 @@ export function subscribeOrder(orderId, onChange) {
     .subscribe();
 
   const pollTimer = window.setInterval(() => {
+    if (document.visibilityState !== "visible") return;
     void getOrder(orderId)
       .then((order) => {
         if (order) onChange?.(order);
