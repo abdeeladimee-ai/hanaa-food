@@ -296,6 +296,21 @@ export async function upsertOrder(order) {
   return fromRow(data);
 }
 
+export async function updateExistingOrder(order) {
+  const supabase = requireSupabase();
+
+  const { data, error } = await supabase
+    .from(TABLE)
+    .update(toRow(order))
+    .eq("id", String(order.id))
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  return fromRow(data);
+}
+
 function flushOrdersNotification() {
   sharedOrdersNotifyTimer = null;
   const payload = pendingOrdersPayload;

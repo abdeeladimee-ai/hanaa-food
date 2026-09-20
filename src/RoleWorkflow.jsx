@@ -3,7 +3,7 @@ import AdminNavigation from "./components/AdminNavigation";
 import { signOut } from "./auth";
 import { configureQzSecurity } from "./qzSecurity";
 
-import { getOrder, listOrders, subscribeOrders, upsertOrder } from "./ordersApi";
+import { getOrder, listOrders, subscribeOrders, updateExistingOrder, upsertOrder } from "./ordersApi";
 const branches = [
   { id: "tadart", name: "Hanaa Food Tadart" },
   { id: "amgala", name: "Hanaa Food Amgala" },
@@ -655,21 +655,50 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
     );
   }, [activeOrderType, branchId, driverId, orders, role]);
   const accept = async (order) => {
-    const acceptedOrder =
+    const acceptedStatus =
       order.orderType === "pickup"
-        ? await transition(order, "VALIDÉE PAR LE SNACK", {
+        ? "VALIDÉE PAR LE SNACK"
+        : "ACCEPTÉE PAR LE CAISSIER";
+
+    const acceptedExtra =
+      order.orderType === "pickup"
+        ? {
             cashierAcceptedBy: session?.id || `staff-${branchId}`,
             cashierAcceptedAt: now(),
             branchId,
-          })
-        : await transition(order, "ACCEPTÉE PAR LE CAISSIER", {
+          }
+        : {
             cashierAcceptedBy: session?.id || `staff-${branchId}`,
             cashierAcceptedAt: now(),
             branchId,
             driverQueueAt: now(),
-          });
+          };
 
-    if (!acceptedOrder) return;
+    const nextOrder = {
+      ...order,
+      ...acceptedExtra,
+      statusLabel: acceptedStatus,
+      statusHistory: [
+        ...(order.statusHistory || []),
+        { status: acceptedStatus, at: now(), ...acceptedExtra },
+      ],
+    };
+
+    let acceptedOrder = null;
+
+    try {
+      acceptedOrder = await updateExistingOrder(nextOrder);
+      setOrders((currentOrders) =>
+        currentOrders.map((item) =>
+          item.id === acceptedOrder.id ? acceptedOrder : item,
+        ),
+      );
+      setNotification(`COMMANDE #${acceptedOrder.id} ACCEPTEE`);
+    } catch (error) {
+      console.error("Supabase order accept failed:", error);
+      window.alert("Validation ma dazatch. 3awed jarrab f chwya.");
+      return;
+    }
 
     try {
       if (role === "snack") {
