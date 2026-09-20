@@ -550,7 +550,11 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
 
     const load = async () => {
       try {
-        applyOrders(await listOrders());
+        applyOrders(
+          await listOrders(
+            role === "snack" && branchId ? { branchId } : undefined,
+          ),
+        );
       } catch (error) {
         console.error("Supabase orders sync failed:", error);
       }

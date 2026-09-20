@@ -199,13 +199,14 @@ const fromRow = (row) => ({
   updatedAt: row.updated_at,
 });
 
-export async function listOrders() {
+export async function listOrders(options = {}) {
   if (listOrdersInFlight) return listOrdersInFlight;
 
   const request = (async () => {
     const supabase = requireSupabase();
     const staff = hasStaffSession();
     const clientOrderIds = staff ? [] : readClientOrderIds();
+    const branchId = String(options?.branchId || "").trim();
 
     if (!staff && !clientOrderIds.length) return [];
 
@@ -213,8 +214,9 @@ export async function listOrders() {
       .from(TABLE)
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(200);
+      .limit(staff && branchId ? 500 : 200);
 
+    if (staff && branchId) query = query.eq("branch_id", branchId);
     if (!staff) query = query.in("id", clientOrderIds);
 
     const { data, error } = await query;
