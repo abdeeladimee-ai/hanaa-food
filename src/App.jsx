@@ -620,8 +620,8 @@ const products = rawProducts.map((item, index) => {
       ? { type: "pasta", choices: item[5] }
       : item[5] || {},
     extras: productExtras,
-    maxExtras: isMealWithSides ? 2 : 99,
-    requiredExtras: isMealWithSides ? 2 : 0,
+    maxExtras: isMealWithSides ? 1 : 99,
+    requiredExtras: isMealWithSides ? 1 : 0,
   };
 });
 const sauceCategories = new Set([
@@ -649,8 +649,6 @@ const requiresSauce = (product) =>
   Boolean(product && sauceCategories.has(product.categoryId));
 
 const baghdadRuptureCategories = new Set([
-  "plats",
-  "grillades",
   "salades",
   "jus",
 ]);
@@ -1459,12 +1457,12 @@ function ProductModal({ product, unavailable = false, close, add }) {
   const isPlateWithSides =
     product.categoryId === "plats" || product.categoryId === "grillades";
   const maxExtras = isPlateWithSides
-    ? 2
+    ? 1
     : Number.isFinite(product.maxExtras)
       ? product.maxExtras
       : 99;
   const requiredExtras = isPlateWithSides
-    ? 2
+    ? 1
     : Number.isFinite(product.requiredExtras)
       ? product.requiredExtras
       : 0;
@@ -1485,7 +1483,7 @@ function ProductModal({ product, unavailable = false, close, add }) {
         : "Choisis ta taille";
   const extrasLabel =
     product.categoryId === "plats" || product.categoryId === "grillades"
-      ? `Choisis 2 accompagnements (${chosen.length}/2)`
+      ? `Choisis 1 accompagnement (${chosen.length}/1)`
       : "Options du menu";
   return (
     <div
@@ -1618,7 +1616,7 @@ function ProductModal({ product, unavailable = false, close, add }) {
                 ? "RUPTURE"
                 : extrasValid
                   ? "Ajouter"
-                  : "Choisis 2 accompagnements"}{" "}
+                  : "Choisis 1 accompagnement"}{" "}
               <b>{total} DH</b>
             </button>
           </div>
