@@ -1,8 +1,8 @@
 import { requireSupabase } from "./supabase";
 
 const TABLE = "orders";
-const POLL_INTERVAL_MS = 30000;
-const REALTIME_DEBOUNCE_MS = 3000;
+const POLL_INTERVAL_MS = 15000;
+const REALTIME_DEBOUNCE_MS = 250;
 const STAFF_SESSION_KEY = "hanaa-auth-session";
 const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
 const LEGACY_CLIENT_ORDER_KEY = "hanaa-order";
