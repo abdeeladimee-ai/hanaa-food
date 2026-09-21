@@ -23,8 +23,39 @@ function validOrder(row) {
 }
 
 export default async function handler(req, res) {
+  if (req.method === "GET") {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/orders?select=id&limit=1`,
+        {
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+          signal: controller.signal,
+        },
+      );
+      return send(res, response.ok ? 200 : response.status, {
+        ok: response.ok,
+        code: response.ok ? "OK" : "SUPABASE_HEALTH_FAILED",
+      });
+    } catch (error) {
+      return send(res, error?.name === "AbortError" ? 504 : 502, {
+        ok: false,
+        code:
+          error?.name === "AbortError"
+            ? "SUPABASE_HEALTH_TIMEOUT"
+            : "SUPABASE_HEALTH_NETWORK_ERROR",
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
+    res.setHeader("Allow", "GET, POST");
     return send(res, 405, { ok: false, code: "METHOD_NOT_ALLOWED" });
   }
 
