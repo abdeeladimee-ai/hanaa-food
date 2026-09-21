@@ -2,10 +2,10 @@
   if (/^\/(admin|snack|livreur|login)(\/|$)/.test(window.location.pathname)) return;
 
   const BANNER_ID = "hanaa-ordering-closed-banner";
-  const TIME_ZONE = "Africa/Casablanca";
+  const TIME_ZONE = "UTC";
   const TEST_CLOSED = new URLSearchParams(window.location.search).get("testClosed") === "1";
 
-  const getCasablancaHour = () => {
+  const getBusinessHour = () => {
     const hourPart = new Intl.DateTimeFormat("en-GB", {
       timeZone: TIME_ZONE,
       hour: "2-digit",
@@ -19,7 +19,7 @@
 
   const isClosed = () => {
     if (TEST_CLOSED) return true;
-    const hour = getCasablancaHour();
+    const hour = getBusinessHour();
     return Number.isFinite(hour) && hour >= 3 && hour < 12;
   };
 
