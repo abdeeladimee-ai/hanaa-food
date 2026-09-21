@@ -2,6 +2,38 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "routes": [
     {
+      "src": "/api/orders",
+      "status": 410,
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
+      "src": "/api/order-submit-v3",
+      "methods": ["GET"],
+      "dest": "/api/order-submit-v3.js"
+    },
+    {
+      "src": "/api/order-submit-v3",
+      "methods": ["POST"],
+      "has": [
+        {
+          "type": "header",
+          "key": "x-hanaa-order-client",
+          "value": "hanaa-orders-v3"
+        }
+      ],
+      "dest": "/api/order-submit-v3.js"
+    },
+    {
+      "src": "/api/order-submit-v3",
+      "methods": ["POST"],
+      "status": 403,
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
       "src": "/assets/(.*)",
       "headers": {
         "Cache-Control": "public, max-age=31536000, immutable"
