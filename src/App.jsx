@@ -129,31 +129,34 @@ const branches = (() => {
       return defaultBranches;
     }
 
-    return savedBranches
-      .map((savedBranch) => {
-        const fallback = defaultBranches.find(
-          (item) => item.id === savedBranch?.id,
-        );
+    const mergedDefaults = defaultBranches.map((fallback) => {
+      const savedBranch =
+        savedBranches.find((item) => item?.id === fallback.id) || {};
 
-        if (!fallback) return null;
+      return {
+        ...fallback,
+        ...savedBranch,
+        latitude: fallback.latitude,
+        longitude: fallback.longitude,
+        deliveryZones:
+          Array.isArray(savedBranch.deliveryZones) &&
+          savedBranch.deliveryZones.length
+            ? savedBranch.deliveryZones
+            : fallback.deliveryZones,
+        deliveryPricingSettings: {
+          ...fallback.deliveryPricingSettings,
+          ...(savedBranch.deliveryPricingSettings || {}),
+        },
+      };
+    });
 
-        return {
-          ...fallback,
-          ...savedBranch,
-          latitude: fallback.latitude,
-          longitude: fallback.longitude,
-          deliveryZones:
-            Array.isArray(savedBranch.deliveryZones) &&
-            savedBranch.deliveryZones.length
-              ? savedBranch.deliveryZones
-              : fallback.deliveryZones,
-          deliveryPricingSettings: {
-            ...fallback.deliveryPricingSettings,
-            ...(savedBranch.deliveryPricingSettings || {}),
-          },
-        };
-      })
-      .filter(Boolean);
+    const extraSavedBranches = savedBranches.filter(
+      (savedBranch) =>
+        savedBranch?.id &&
+        !defaultBranches.some((fallback) => fallback.id === savedBranch.id),
+    );
+
+    return [...mergedDefaults, ...extraSavedBranches];
   } catch {
     return defaultBranches;
   }
