@@ -1746,6 +1746,7 @@ function Checkout({
   onBack,
   onPlace,
 }) {
+  const [submitting, setSubmitting] = useState(false);
   const [data, setData] = useState(() => {
     let profile = {};
     try {
@@ -1784,13 +1785,19 @@ function Checkout({
       </div>
       <form
         className="checkout-form"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
-          if (valid)
-            onPlace({
+          if (!valid || submitting) return;
+
+          setSubmitting(true);
+          try {
+            await onPlace({
               ...data,
               address: mode === "pickup" ? "" : data.address,
             });
+          } finally {
+            setSubmitting(false);
+          }
         }}
       >
         <h2>Tes coordonnées</h2>
@@ -1889,8 +1896,13 @@ function Checkout({
           />{" "}
           Paiement en ligne <span>Bientôt disponible</span>
         </label>
-        <button className="primary-action full" disabled={!valid}>
-          Confirmer la commande <span>→</span>
+        <button
+          className="primary-action full"
+          disabled={!valid || submitting}
+          aria-busy={submitting ? "true" : "false"}
+        >
+          {submitting ? "Envoi de la commande..." : "Confirmer la commande"}{" "}
+          <span>{submitting ? "…" : "→"}</span>
         </button>
       </form>
     </main>
