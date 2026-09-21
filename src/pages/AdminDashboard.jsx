@@ -145,7 +145,7 @@ const casablancaDateKey = (value = new Date()) => {
   if (Number.isNaN(date.getTime())) return "";
 
   const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Africa/Casablanca",
+    timeZone: "UTC",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -401,6 +401,7 @@ export default function AdminDashboard({ onNavigate }) {
       year: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "UTC",
     });
   };
 
@@ -715,7 +716,7 @@ export default function AdminDashboard({ onNavigate }) {
                               ).toLocaleTimeString("fr-FR", {
                                 hour: "2-digit",
                                 minute: "2-digit",
-                                timeZone: "Africa/Casablanca",
+                                timeZone: "UTC",
                               })}
                             </Td>
                             <Td>
