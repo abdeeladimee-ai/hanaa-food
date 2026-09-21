@@ -29,6 +29,44 @@ const pickupStatuses = [
 ];
 const now = () => new Date().toISOString();
 const DRIVER_LIVE_START_AT = Date.parse("2026-09-19T11:39:42Z");
+const STAFF_ORDERS_CACHE_PREFIX = "hanaa-staff-orders-cache:";
+
+const staffOrdersCacheKey = (role, branchId, driverId) => {
+  const scope =
+    role === "snack"
+      ? branchId || "unknown-branch"
+      : role === "driver"
+        ? driverId || "unknown-driver"
+        : "all";
+
+  return `${STAFF_ORDERS_CACHE_PREFIX}${role || "staff"}:${scope}`;
+};
+
+const readStaffOrdersCache = (role, branchId, driverId) => {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(staffOrdersCacheKey(role, branchId, driverId)) || "[]",
+    );
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeStaffOrdersCache = (role, branchId, driverId, orders) => {
+  if (typeof window === "undefined" || !Array.isArray(orders)) return;
+
+  try {
+    localStorage.setItem(
+      staffOrdersCacheKey(role, branchId, driverId),
+      JSON.stringify(orders.slice(0, 200)),
+    );
+  } catch {
+    // Keep the live screen working even if local storage is unavailable/full.
+  }
+};
 
 const isDriverLiveOrder = (order) => {
   const createdAt = Date.parse(order?.createdAt || "");
@@ -420,8 +458,11 @@ const printDriverAssignmentSlip = async (order) => {
 // HANAA_QZ_INTEGRATION_END
 
 export default function RoleWorkflow({ role, session, onHome, orderType, title, staffBranchId }) {
-  const [orders, setOrders] = useState([]);
   const branchId = session?.branchId || staffBranchId || null;
+  const driverId = session?.id || null;
+  const [orders, setOrders] = useState(() =>
+    readStaffOrdersCache(role, branchId, driverId),
+  );
   const [snackOrderType, setSnackOrderType] = useState("delivery");
   const activeOrderType = role === "snack" ? snackOrderType : orderType;
   const [reasonOrder, setReasonOrder] = useState(null);
@@ -434,7 +475,6 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
   const knownDriverAssignments = useRef(new Set());
   const hasSyncedOrders = useRef(false);
   const lastOrdersSnapshot = useRef("");
-  const driverId = session?.id || null;
   const driverName = session?.name || "Livreur";
 
   useEffect(() => {
@@ -546,6 +586,7 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
 
       lastOrdersSnapshot.current = snapshot;
       hasSyncedOrders.current = true;
+      writeStaffOrdersCache(role, branchId, driverId, nextOrders);
       setOrders(nextOrders);
     };
 
@@ -586,9 +627,13 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
       const updated = updater(current);
       const saved = await upsertOrder(updated);
 
-      setOrders((currentOrders) =>
-        currentOrders.map((item) => (item.id === saved.id ? saved : item)),
-      );
+      setOrders((currentOrders) => {
+        const nextOrders = currentOrders.map((item) =>
+          item.id === saved.id ? saved : item,
+        );
+        writeStaffOrdersCache(role, branchId, driverId, nextOrders);
+        return nextOrders;
+      });
 
       return saved;
     } catch (error) {
