@@ -2,6 +2,21 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (() => {
+        const blockedVercelHosts = new Set([
+          "hanaa-food.vercel.app",
+          "hanaa-food-hanaa-food.vercel.app",
+          "hanaa-food-git-main-hanaa-food.vercel.app",
+        ]);
+
+        if (blockedVercelHosts.has(window.location.hostname)) {
+          window.location.replace(
+            `https://www.hanaafood.ma${window.location.pathname}${window.location.search}${window.location.hash}`,
+          );
+        }
+      })();
+    </script>
     <link rel="icon" type="image/png" href="/hanaa-logo.png?v=20260913" />
     <link rel="shortcut icon" type="image/png" href="/hanaa-logo.png?v=20260913" />
     <link rel="apple-touch-icon" href="/hanaa-logo.png?v=20260913" />
