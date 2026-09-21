@@ -8,6 +8,7 @@ const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
 const LEGACY_CLIENT_ORDER_KEY = "hanaa-order";
 
 let listOrdersInFlight = null;
+let createOrderInFlight = null;
 const getOrderInFlight = new Map();
 
 const ordersSubscribers = new Set();
@@ -271,19 +272,31 @@ export async function getOrder(orderId) {
 
 export async function createOrder(order) {
   assertCustomerOrderingOpen();
-  const supabase = requireSupabase();
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .insert(toRow(order))
-    .select("*")
-    .single();
+  if (createOrderInFlight) return createOrderInFlight;
 
-  if (error) throw error;
+  const request = (async () => {
+    const supabase = requireSupabase();
+    const row = toRow(order);
 
-  const savedOrder = fromRow(data);
-  rememberClientOrder(savedOrder.id);
-  return savedOrder;
+    const { error } = await supabase
+      .from(TABLE)
+      .insert(row);
+
+    if (error) throw error;
+
+    const savedOrder = fromRow(row);
+    rememberClientOrder(savedOrder.id);
+    return savedOrder;
+  })();
+
+  createOrderInFlight = request;
+
+  try {
+    return await request;
+  } finally {
+    if (createOrderInFlight === request) createOrderInFlight = null;
+  }
 }
 
 export async function upsertOrder(order) {
