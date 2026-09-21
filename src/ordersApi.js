@@ -217,7 +217,7 @@ export async function listOrders(options = {}) {
 
     let query = supabase
       .from(TABLE)
-      .select("*")
+      .select("id,payload,created_at,updated_at")
       .order("created_at", { ascending: false })
       .limit(200);
 
@@ -252,7 +252,7 @@ export async function getOrder(orderId) {
 
     const { data, error } = await supabase
       .from(TABLE)
-      .select("*")
+      .select("id,payload,created_at,updated_at")
       .eq("id", key)
       .maybeSingle();
 
@@ -324,31 +324,29 @@ export async function createOrder(order) {
 
 export async function upsertOrder(order) {
   const supabase = requireSupabase();
+  const row = toRow(order);
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from(TABLE)
-    .upsert(toRow(order), { onConflict: "id" })
-    .select("*")
-    .single();
+    .upsert(row, { onConflict: "id" });
 
   if (error) throw error;
 
-  return fromRow(data);
+  return fromRow(row);
 }
 
 export async function updateExistingOrder(order) {
   const supabase = requireSupabase();
+  const row = toRow(order);
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from(TABLE)
-    .update(toRow(order))
-    .eq("id", String(order.id))
-    .select("*")
-    .single();
+    .update(row)
+    .eq("id", String(order.id));
 
   if (error) throw error;
 
-  return fromRow(data);
+  return fromRow(row);
 }
 
 function flushOrdersNotification() {
