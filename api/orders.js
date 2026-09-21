@@ -1,7 +1,9 @@
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 
 function send(res, status, body) {
-  res.status(status).setHeader("Content-Type", JSON_HEADERS["Content-Type"]);
+  res.status(status);
+  res.setHeader("Content-Type", JSON_HEADERS["Content-Type"]);
+  res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(body));
 }
 
@@ -14,102 +16,87 @@ function validOrder(row) {
   return true;
 }
 
-async function callDirectWriter({ supabaseUrl, anonKey, method, row }) {
+const supabaseUrl = "https://kkmbiiiglgevwehhmtzq.supabase.co";
+const publishableKey = "sb_publishable_cqSPEkE8JbyIu9NasnOMng_GwRMKVFO";
+
+async function supabaseFetch(path, options = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
+  const timer = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const response = await fetch(
-      `${supabaseUrl}/functions/v1/order-write-direct`,
-      {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          "x-hanaa-key": anonKey,
-        },
-        ...(method === "POST" ? { body: JSON.stringify(row) } : {}),
-        signal: controller.signal,
+    return await fetch(`${supabaseUrl}${path}`, {
+      ...options,
+      headers: {
+        apikey: publishableKey,
+        Authorization: `Bearer ${publishableKey}`,
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
       },
-    );
-
-    let body = null;
-    try {
-      body = await response.json();
-    } catch {
-      body = null;
-    }
-
-    return { response, body };
+      signal: controller.signal,
+    });
   } finally {
     clearTimeout(timer);
   }
 }
 
 export default async function handler(req, res) {
-  const supabaseUrl = "https://kkmbiiiglgevwehhmtzq.supabase.co";
-  const anonKey = "sb_publishable_cqSPEkE8JbyIu9NasnOMng_GwRMKVFO";
-
-  if (!supabaseUrl || !anonKey) {
-    return send(res, 500, {
-      ok: false,
-      code: "SERVER_SUPABASE_NOT_CONFIGURED",
-    });
-  }
-
-  if (req.method === "GET") {
-    try {
-      const { response, body } = await callDirectWriter({
-        supabaseUrl,
-        anonKey,
+  try {
+    if (req.method === "GET") {
+      const response = await supabaseFetch("/rest/v1/orders?select=id&limit=1", {
         method: "GET",
       });
 
-      return send(res, response.status, body || {
-        ok: response.ok,
-        code: response.ok ? "OK" : "DIRECT_WRITER_FAILED",
-      });
-    } catch (error) {
-      return send(res, error?.name === "AbortError" ? 504 : 502, {
-        ok: false,
-        code: error?.name === "AbortError" ? "DIRECT_WRITER_TIMEOUT" : "DIRECT_WRITER_NETWORK_ERROR",
-      });
+      if (!response.ok) {
+        return send(res, response.status, {
+          ok: false,
+          code: "SUPABASE_REST_UNAVAILABLE",
+        });
+      }
+
+      return send(res, 200, { ok: true, path: "supabase-rest" });
     }
-  }
 
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "GET, POST");
-    return send(res, 405, { ok: false, code: "METHOD_NOT_ALLOWED" });
-  }
+    if (req.method !== "POST") {
+      res.setHeader("Allow", "GET, POST");
+      return send(res, 405, { ok: false, code: "METHOD_NOT_ALLOWED" });
+    }
 
-  const row = req.body;
-  if (!validOrder(row)) {
-    return send(res, 400, { ok: false, code: "INVALID_ORDER" });
-  }
+    const row = req.body;
+    if (!validOrder(row)) {
+      return send(res, 400, { ok: false, code: "INVALID_ORDER" });
+    }
 
-  try {
-    const { response, body } = await callDirectWriter({
-      supabaseUrl,
-      anonKey,
+    const response = await supabaseFetch("/rest/v1/orders?on_conflict=id", {
       method: "POST",
-      row,
+      headers: {
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify(row),
     });
 
-    if (response.ok) {
-      return send(res, 200, {
-        ok: true,
-        path: body?.path || "supabase-direct-writer",
+    if (!response.ok) {
+      let detail = "";
+      try {
+        detail = (await response.text()).slice(0, 300);
+      } catch {
+        detail = "";
+      }
+
+      return send(res, response.status, {
+        ok: false,
+        code: "SUPABASE_ORDER_WRITE_FAILED",
+        detail,
       });
     }
 
-    return send(res, response.status, body || {
-      ok: false,
-      code: "DIRECT_WRITER_FAILED",
-    });
+    return send(res, 200, { ok: true, path: "supabase-rest" });
   } catch (error) {
     return send(res, error?.name === "AbortError" ? 504 : 502, {
       ok: false,
-      code: error?.name === "AbortError" ? "DIRECT_WRITER_TIMEOUT" : "DIRECT_WRITER_NETWORK_ERROR",
-      message: String(error?.message || error || ""),
+      code:
+        error?.name === "AbortError"
+          ? "SUPABASE_REST_TIMEOUT"
+          : "SUPABASE_REST_NETWORK_ERROR",
     });
   }
 }
