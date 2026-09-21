@@ -311,30 +311,7 @@ export async function createOrder(order) {
       }
     };
 
-    const viaDirectSupabase = async () => {
-      const supabase = requireSupabase();
-      const directRequest = supabase
-        .from(TABLE)
-        .upsert(row, { onConflict: "id" });
-
-      const timeout = new Promise((_, reject) => {
-        window.setTimeout(() => {
-          const error = new Error("SUPABASE_DIRECT_TIMEOUT");
-          error.status = 504;
-          reject(error);
-        }, 8000);
-      });
-
-      const result = await Promise.race([directRequest, timeout]);
-      if (result?.error) throw result.error;
-    };
-
-    try {
-      await viaServer();
-    } catch (serverError) {
-      console.error("Order server endpoint failed, trying direct Supabase:", serverError);
-      await viaDirectSupabase();
-    }
+    await viaServer();
 
     const savedOrder = fromRow(row);
     rememberClientOrder(savedOrder.id);
