@@ -6,20 +6,26 @@ export default function Login({ onSuccess }) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const submit = async (event) => {
     event.preventDefault();
     setError("");
+    setLoading(true);
 
-    let session = signInNamedCashier(identifier, password);
-    if (!session) session = await signIn(identifier, password);
+    try {
+      let session = signInNamedCashier(identifier, password);
+      if (!session) session = await signIn(identifier, password);
 
-    if (!session) {
-      setError("Smiya / téléphone / email ou mot de passe incorrect.");
-      return;
+      if (!session) {
+        setError("Smiya / téléphone / email ou mot de passe incorrect.");
+        return;
+      }
+
+      onSuccess(session);
+    } finally {
+      setLoading(false);
     }
-
-    onSuccess(session);
   };
 
   return (
@@ -70,8 +76,8 @@ export default function Login({ onSuccess }) {
 
         {error && <div style={styles.error}>{error}</div>}
 
-        <button type="submit" style={styles.button}>
-          SE CONNECTER
+        <button type="submit" style={styles.button} disabled={loading}>
+          {loading ? "CONNEXION..." : "SE CONNECTER"}
         </button>
       </form>
     </main>

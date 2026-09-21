@@ -21,7 +21,11 @@ function hasStaffSession() {
   if (typeof window === "undefined") return false;
 
   try {
-    const session = JSON.parse(sessionStorage.getItem(STAFF_SESSION_KEY) || "null");
+    const raw =
+      localStorage.getItem(STAFF_SESSION_KEY) ||
+      sessionStorage.getItem(STAFF_SESSION_KEY) ||
+      "null";
+    const session = JSON.parse(raw);
     const role = String(session?.role || "").trim().toUpperCase();
     return ["ADMIN", "SNACK", "LIVREUR"].includes(role);
   } catch {

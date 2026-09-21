@@ -130,6 +130,18 @@ const cloudRpc = async (name, args) => {
   return data;
 };
 
+const withTimeout = (promise, ms, code = "REQUEST_TIMEOUT") =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      window.setTimeout(() => {
+        const error = new Error(code);
+        error.code = code;
+        reject(error);
+      }, ms);
+    }),
+  ]);
+
 const migrateLegacyStaffAccounts = async (token) => {
   const legacy = getStaffAccounts().filter(
     (item) =>
@@ -316,10 +328,14 @@ export const signIn = async (identifier, password) => {
   const phoneValue = normalizePhone(value);
 
   try {
-    const cloudAccount = await cloudRpc("staff_login", {
-      p_identifier: value,
-      p_password: String(password || ""),
-    });
+    const cloudAccount = await withTimeout(
+      cloudRpc("staff_login", {
+        p_identifier: value,
+        p_password: String(password || ""),
+      }),
+      6000,
+      "STAFF_LOGIN_TIMEOUT",
+    );
 
     if (cloudAccount?.role) {
       const session = {
@@ -331,13 +347,15 @@ export const signIn = async (identifier, password) => {
       localStorage.setItem(sessionKey, JSON.stringify(session));
 
       if (session.role === "ADMIN" && session.cloudToken) {
-        try {
-          await migrateLegacyStaffAccounts(session.cloudToken);
-          const accounts = await listCloudStaffAccounts(session.cloudToken);
-          saveStaffAccounts(accounts);
-        } catch (error) {
-          console.error("Legacy staff sync failed:", error);
-        }
+        void (async () => {
+          try {
+            await migrateLegacyStaffAccounts(session.cloudToken);
+            const accounts = await listCloudStaffAccounts(session.cloudToken);
+            saveStaffAccounts(accounts);
+          } catch (error) {
+            console.error("Legacy staff sync failed:", error);
+          }
+        })();
       }
 
       return session;
