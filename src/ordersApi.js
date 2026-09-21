@@ -277,31 +277,64 @@ export async function createOrder(order) {
   if (createOrderInFlight) return createOrderInFlight;
 
   const request = (async () => {
-    const supabase = requireSupabase();
     const row = toRow(order);
 
-    const runInsert = async () => {
-      const result = await supabase
-        .from(TABLE)
-        .upsert(row, { onConflict: "id" });
+    const viaServer = async () => {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 9000);
 
-      if (!result.error) return result;
+      try {
+        const response = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(row),
+          signal: controller.signal,
+        });
 
-      const transientStatus = Number(result.status) >= 500;
-      const transientMessage = /failed to fetch|timeout|connection|gateway|502|503|504|520|522/i.test(
-        String(result.error?.message || ""),
-      );
+        if (response.ok) return;
 
-      if (!transientStatus && !transientMessage) return result;
+        let details = null;
+        try {
+          details = await response.json();
+        } catch {
+          details = null;
+        }
 
-      await new Promise((resolve) => window.setTimeout(resolve, 1400));
-      return supabase
-        .from(TABLE)
-        .upsert(row, { onConflict: "id" });
+        const error = new Error(
+          details?.code || `ORDER_API_${response.status}`,
+        );
+        error.status = response.status;
+        error.details = details;
+        throw error;
+      } finally {
+        window.clearTimeout(timer);
+      }
     };
 
-    const { error } = await runInsert();
-    if (error) throw error;
+    const viaDirectSupabase = async () => {
+      const supabase = requireSupabase();
+      const directRequest = supabase
+        .from(TABLE)
+        .upsert(row, { onConflict: "id" });
+
+      const timeout = new Promise((_, reject) => {
+        window.setTimeout(() => {
+          const error = new Error("SUPABASE_DIRECT_TIMEOUT");
+          error.status = 504;
+          reject(error);
+        }, 8000);
+      });
+
+      const result = await Promise.race([directRequest, timeout]);
+      if (result?.error) throw result.error;
+    };
+
+    try {
+      await viaServer();
+    } catch (serverError) {
+      console.error("Order server endpoint failed, trying direct Supabase:", serverError);
+      await viaDirectSupabase();
+    }
 
     const savedOrder = fromRow(row);
     rememberClientOrder(savedOrder.id);
