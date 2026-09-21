@@ -10,7 +10,11 @@ const QZ_GLOBAL_CONNECT_KEY = "__hanaaQzConnectPromise";
 
 function currentBranchId() {
   try {
-    const session = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
+    const session = JSON.parse(
+      localStorage.getItem(SESSION_KEY) ||
+        sessionStorage.getItem(SESSION_KEY) ||
+        "null",
+    );
     return String(session?.branchId || "").trim().toLowerCase();
   } catch {
     return "";
@@ -20,6 +24,19 @@ function currentBranchId() {
 function cashierPrinterHints() {
   if (currentBranchId() === "amgala") return ["imp caisse", "caisse"];
   return ["caisse", "imp caisse"];
+}
+
+function readCachedSnackOrder(orderId) {
+  try {
+    const branchId = currentBranchId() || "unknown-branch";
+    const key = `hanaa-staff-orders-cache:snack:${branchId}`;
+    const orders = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(orders)
+      ? orders.find((order) => String(order?.id) === String(orderId)) || null
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function syncCashierPrinterHint() {
@@ -351,7 +368,7 @@ function addPrintButton(card) {
     button.textContent = "IMPRESSION...";
 
     try {
-      const order = await getOrder(orderId);
+      const order = readCachedSnackOrder(orderId) || (await getOrder(orderId));
       if (!order) throw new Error("Commande introuvable.");
       const printer = await printCashierOrder(order);
       sessionStorage.setItem(printKey, "1");
