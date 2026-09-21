@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { refreshStaffAccounts } from "../auth";
 import { listOrders, subscribeOrders } from "../ordersApi";
@@ -210,6 +210,8 @@ const branchNames = {
 
 export default function AdminDashboard({ onNavigate }) {
   const [orders, setOrders] = useState([]);
+  const ordersRef = useRef([]);
+  const lastSuccessfulSyncRef = useRef("");
   const [staffAccounts, setStaffAccounts] = useState([]);
   const [selectedHistoryDate, setSelectedHistoryDate] = useState(() =>
     casablancaDateKey(new Date()),
@@ -220,12 +222,45 @@ export default function AdminDashboard({ onNavigate }) {
   useEffect(() => {
     let active = true;
 
-    const loadOrders = async () => {
+    const mergeOrderChanges = (changes) => {
+      const byId = new Map(
+        (ordersRef.current || []).map((order) => [String(order.id), order]),
+      );
+
+      (changes || []).forEach((order) => {
+        if (order?.id) byId.set(String(order.id), order);
+      });
+
+      return [...byId.values()]
+        .sort(
+          (first, second) =>
+            new Date(second.updatedAt || second.createdAt || 0) -
+            new Date(first.updatedAt || first.createdAt || 0),
+        )
+        .slice(0, 200);
+    };
+
+    const loadOrders = async ({ incremental = false } = {}) => {
+      const cursor = incremental ? lastSuccessfulSyncRef.current : "";
+      const requestStartedAt = new Date(Date.now() - 2000).toISOString();
+
       try {
-        const nextOrders = await listOrders();
-        if (active) setOrders(nextOrders);
+        const changes = await listOrders({
+          ...(cursor ? { updatedSince: cursor } : {}),
+          limit: cursor ? 60 : 200,
+        });
+
+        const nextOrders = cursor ? mergeOrderChanges(changes) : changes;
+        if (active) {
+          ordersRef.current = nextOrders;
+          setOrders(nextOrders);
+          lastSuccessfulSyncRef.current = requestStartedAt;
+        }
+
+        return changes;
       } catch (error) {
         console.error("Admin orders sync failed:", error);
+        throw error;
       }
     };
 
@@ -240,12 +275,14 @@ export default function AdminDashboard({ onNavigate }) {
       }
     };
 
-    void loadOrders();
+    void loadOrders().catch(() => {});
     void loadStaffOnce();
 
     let unsubscribe = () => {};
     try {
-      unsubscribe = subscribeOrders(() => void loadOrders());
+      unsubscribe = subscribeOrders(() =>
+        loadOrders({ incremental: Boolean(lastSuccessfulSyncRef.current) }),
+      );
     } catch (error) {
       console.error("Admin polling start failed:", error);
     }
