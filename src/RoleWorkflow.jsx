@@ -133,6 +133,7 @@ const qzTicketTime = (order) => {
         year: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
+        timeZone: "UTC",
       });
 };
 
@@ -1136,7 +1137,7 @@ function OrderCard({
             {order.statusLabel || "NOUVELLE COMMANDE"}
           </span>
         </div>
-        <time>{new Date(order.createdAt).toLocaleString("fr-FR")}</time>
+        <time>{new Date(order.createdAt).toLocaleString("fr-FR", { timeZone: "UTC" })}</time>
       </div>
       <div className="workflow-card-grid">
         <div>
