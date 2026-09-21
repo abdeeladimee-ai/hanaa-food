@@ -140,7 +140,7 @@
       if (!button) return;
       const label = cleanText(button.textContent);
 
-      if (/^(Commander|Confirmer la commande)\b/.test(label) && !profileIsValid()) {
+      if (/^Commander\b/.test(label) && !profileIsValid()) {
         event.preventDefault();
         event.stopImmediatePropagation();
         goToProfile();
