@@ -63,8 +63,11 @@ const devAccounts = [
   },
 ];
 
-const normalizePhone = (value) =>
-  String(value || "").replace(/[^\d+]/g, "").trim();
+const normalizePhone = (value) => {
+  const digits = String(value || "").replace(/[^0-9]/g, "").trim();
+  if (/^212[67]\d{8}$/.test(digits)) return `0${digits.slice(3)}`;
+  return digits;
+};
 
 const hashPassword = async (value) => {
   const input = new TextEncoder().encode(String(value || ""));
