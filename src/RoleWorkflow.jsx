@@ -475,6 +475,8 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
   const knownDriverAssignments = useRef(new Set());
   const hasSyncedOrders = useRef(false);
   const lastOrdersSnapshot = useRef("");
+  const ordersRef = useRef(orders);
+  const lastSuccessfulSyncRef = useRef("");
   const driverName = session?.name || "Livreur";
 
   useEffect(() => {
@@ -586,31 +588,58 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
 
       lastOrdersSnapshot.current = snapshot;
       hasSyncedOrders.current = true;
+      ordersRef.current = nextOrders;
       writeStaffOrdersCache(role, branchId, driverId, nextOrders);
       setOrders(nextOrders);
     };
 
-    const load = async () => {
+    const mergeOrderChanges = (changes) => {
+      const byId = new Map(
+        (ordersRef.current || []).map((order) => [String(order.id), order]),
+      );
+
+      (changes || []).forEach((order) => {
+        if (order?.id) byId.set(String(order.id), order);
+      });
+
+      return [...byId.values()]
+        .sort(
+          (first, second) =>
+            new Date(second.updatedAt || second.createdAt || 0) -
+            new Date(first.updatedAt || first.createdAt || 0),
+        )
+        .slice(0, 200);
+    };
+
+    const load = async ({ incremental = false } = {}) => {
+      const cursor = incremental ? lastSuccessfulSyncRef.current : "";
+      const requestStartedAt = new Date(Date.now() - 2000).toISOString();
+
       try {
-        applyOrders(
-          await listOrders(
-            role === "snack" && branchId ? { branchId } : undefined,
-          ),
-        );
+        const next = await listOrders({
+          ...(role === "snack" && branchId ? { branchId } : {}),
+          ...(cursor ? { updatedSince: cursor } : {}),
+          limit: cursor ? 60 : 120,
+        });
+
+        applyOrders(cursor ? mergeOrderChanges(next) : next);
+        lastSuccessfulSyncRef.current = requestStartedAt;
+        return next;
       } catch (error) {
         console.error("Supabase orders sync failed:", error);
+        throw error;
       }
     };
 
-    void load();
+    void load().catch(() => {});
 
     let unsubscribe = () => {};
     try {
-      unsubscribe = subscribeOrders(() => {
-        void load();
-      });
+      unsubscribe = subscribeOrders(() =>
+        load({ incremental: Boolean(lastSuccessfulSyncRef.current) }),
+      );
     } catch (error) {
-      console.error("Supabase realtime start failed:", error);
+      console.error("Supabase polling start failed:", error);
     }
 
     return () => {
@@ -631,6 +660,7 @@ export default function RoleWorkflow({ role, session, onHome, orderType, title, 
         const nextOrders = currentOrders.map((item) =>
           item.id === saved.id ? saved : item,
         );
+        ordersRef.current = nextOrders;
         writeStaffOrdersCache(role, branchId, driverId, nextOrders);
         return nextOrders;
       });
