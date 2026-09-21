@@ -343,7 +343,21 @@ export async function createOrder(order) {
       }
     };
 
-    await viaServer();
+    try {
+      await viaServer();
+    } catch (error) {
+      const status = Number(error?.status || 0);
+      const transient =
+        status === 502 ||
+        status === 503 ||
+        status === 504 ||
+        /abort|timeout|network|fetch/i.test(String(error?.message || ""));
+
+      if (!transient) throw error;
+
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+      await viaServer();
+    }
 
     const savedOrder = fromRow(row);
     rememberClientOrder(savedOrder.id);
