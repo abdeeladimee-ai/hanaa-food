@@ -61,14 +61,14 @@ export default async function handler(req, res) {
   try {
     const clientIp = firstForwardedIp(req);
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/orders`,
+      `${supabaseUrl}/rest/v1/orders?on_conflict=id`,
       {
         method: "POST",
         headers: {
           apikey: anonKey,
           Authorization: `Bearer ${anonKey}`,
           "Content-Type": "application/json",
-          Prefer: "return=minimal",
+          Prefer: "resolution=merge-duplicates,return=minimal",
           Origin: "https://hanaafood.ma",
           "User-Agent": "Mozilla/5.0 HanaaFoodOrderProxy/1.0",
           ...(clientIp ? { "X-Forwarded-For": clientIp } : {}),
