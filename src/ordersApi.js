@@ -284,7 +284,7 @@ export async function createOrder(order) {
       const timer = window.setTimeout(() => controller.abort(), 9000);
 
       try {
-        const response = await fetch("/api/orders", {
+        const response = await fetch("https://www.hanaafood.ma/api/orders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(row),
