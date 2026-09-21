@@ -1356,7 +1356,13 @@ function ProductCard({
         {favorite ? "♥" : "♡"}
       </button>
       <button className="product-image" data-category={product.categoryId} onClick={onDetails}>
-        <img src={product.image} alt={product.name} />
+        <img
+          src={product.image}
+          alt={product.name}
+          loading="lazy"
+          decoding="async"
+          fetchPriority="low"
+        />
         <span>{product.categoryId}</span>
         {unavailable && (
           <b
