@@ -334,11 +334,11 @@ export async function createOrder(order) {
     const timer = window.setTimeout(() => controller.abort(), 10000);
 
     try {
-      const response = await fetch("/api/orders", {
+      const response = await fetch("/api/order-submit-v3", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-hanaa-order-client": "hanaa-orders-v2",
+          "x-hanaa-order-client": "hanaa-orders-v3",
         },
         body: JSON.stringify(row),
         signal: controller.signal,
