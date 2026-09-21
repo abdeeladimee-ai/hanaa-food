@@ -2005,27 +2005,16 @@ function Orders({ order, onHome, onReorder, onTrack }) {
   useEffect(() => {
     let active = true;
 
-    const load = async () => {
-      try {
-        const latest = await listOrders();
+    void listOrders()
+      .then((latest) => {
         if (active) setSavedOrders(latest);
-      } catch (error) {
+      })
+      .catch((error) => {
         console.error("Orders Supabase load failed:", error);
-      }
-    };
-
-    void load();
-
-    let unsubscribe = () => {};
-    try {
-      unsubscribe = subscribeOrders(() => void load());
-    } catch (error) {
-      console.error("Orders Supabase realtime failed:", error);
-    }
+      });
 
     return () => {
       active = false;
-      unsubscribe();
     };
   }, []);
 
