@@ -950,7 +950,7 @@ function App() {
     );
   const place = async (details) => {
     const rawCooldownPhone = String(details?.phone || "").replace(/[^0-9]/g, "");
-    const normalizedCooldownPhone = /^212[67]\\d{8}$/.test(rawCooldownPhone)
+    const normalizedCooldownPhone = /^212[67]\d{8}$/.test(rawCooldownPhone)
       ? `0${rawCooldownPhone.slice(3)}`
       : rawCooldownPhone;
     const cooldownKey = `hanaa-order-cooldown:${normalizedCooldownPhone || "device"}`;
