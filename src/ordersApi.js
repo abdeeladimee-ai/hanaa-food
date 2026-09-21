@@ -17,20 +17,24 @@ const ordersSubscribers = new Set();
 let sharedOrdersPollTimer = null;
 let sharedOrdersFailureCount = 0;
 
-function hasStaffSession() {
-  if (typeof window === "undefined") return false;
+function readStaffSession() {
+  if (typeof window === "undefined") return null;
 
   try {
     const raw =
       localStorage.getItem(STAFF_SESSION_KEY) ||
       sessionStorage.getItem(STAFF_SESSION_KEY) ||
       "null";
-    const session = JSON.parse(raw);
-    const role = String(session?.role || "").trim().toUpperCase();
-    return ["ADMIN", "SNACK", "LIVREUR"].includes(role);
+    return JSON.parse(raw);
   } catch {
-    return false;
+    return null;
   }
+}
+
+function hasStaffSession() {
+  const session = readStaffSession();
+  const role = String(session?.role || "").trim().toUpperCase();
+  return ["ADMIN", "SNACK", "LIVREUR"].includes(role);
 }
 
 const CUSTOMER_ORDER_TIME_ZONE = "UTC";
@@ -232,6 +236,22 @@ export async function listOrders(options = {}) {
     );
 
     try {
+      const session = readStaffSession();
+      const role = String(session?.role || "").trim().toUpperCase();
+
+      if (role === "ADMIN" && session?.cloudToken) {
+        const { data, error } = await supabase
+          .rpc("staff_admin_orders", {
+            p_token: String(session.cloudToken),
+            p_updated_since: updatedSince || null,
+            p_limit: limit,
+          })
+          .abortSignal(controller.signal);
+
+        if (error) throw error;
+        return (data || []).map(fromRow);
+      }
+
       let query = supabase
         .from(TABLE)
         .select("id,payload,created_at,updated_at")
