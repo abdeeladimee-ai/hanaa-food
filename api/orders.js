@@ -5,17 +5,6 @@ function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function firstForwardedIp(req) {
-  const raw =
-    req.headers["x-forwarded-for"] ||
-    req.headers["x-real-ip"] ||
-    req.socket?.remoteAddress ||
-    "";
-  return String(Array.isArray(raw) ? raw[0] : raw)
-    .split(",")[0]
-    .trim();
-}
-
 function validOrder(row) {
   if (!row || typeof row !== "object" || Array.isArray(row)) return false;
   if (!/^HF\d{4}$/i.test(String(row.id || ""))) return false;
@@ -25,14 +14,66 @@ function validOrder(row) {
   return true;
 }
 
+async function callDirectWriter({ supabaseUrl, anonKey, method, row }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch(
+      `${supabaseUrl}/functions/v1/order-write-direct`,
+      {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "x-hanaa-key": anonKey,
+        },
+        ...(method === "POST" ? { body: JSON.stringify(row) } : {}),
+        signal: controller.signal,
+      },
+    );
+
+    let body = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+
+    return { response, body };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export default async function handler(req, res) {
-  if (req.method === "GET") {
-    return send(res, 200, {
-      ok: true,
-      configured: Boolean(
-        process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_ANON_KEY,
-      ),
+  const supabaseUrl = String(process.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+  const anonKey = String(process.env.VITE_SUPABASE_ANON_KEY || "");
+
+  if (!supabaseUrl || !anonKey) {
+    return send(res, 500, {
+      ok: false,
+      code: "SERVER_SUPABASE_NOT_CONFIGURED",
     });
+  }
+
+  if (req.method === "GET") {
+    try {
+      const { response, body } = await callDirectWriter({
+        supabaseUrl,
+        anonKey,
+        method: "GET",
+      });
+
+      return send(res, response.status, body || {
+        ok: response.ok,
+        code: response.ok ? "OK" : "DIRECT_WRITER_FAILED",
+      });
+    } catch (error) {
+      return send(res, error?.name === "AbortError" ? 504 : 502, {
+        ok: false,
+        code: error?.name === "AbortError" ? "DIRECT_WRITER_TIMEOUT" : "DIRECT_WRITER_NETWORK_ERROR",
+      });
+    }
   }
 
   if (req.method !== "POST") {
@@ -45,65 +86,30 @@ export default async function handler(req, res) {
     return send(res, 400, { ok: false, code: "INVALID_ORDER" });
   }
 
-  const supabaseUrl = String(process.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
-  const anonKey = String(process.env.VITE_SUPABASE_ANON_KEY || "");
-
-  if (!supabaseUrl || !anonKey) {
-    return send(res, 500, {
-      ok: false,
-      code: "SERVER_SUPABASE_NOT_CONFIGURED",
-    });
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
-
   try {
-    const clientIp = firstForwardedIp(req);
-    const response = await fetch(
-      `${supabaseUrl}/rest/v1/orders?on_conflict=id`,
-      {
-        method: "POST",
-        headers: {
-          apikey: anonKey,
-          Authorization: `Bearer ${anonKey}`,
-          "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates,return=minimal",
-          Origin: "https://hanaafood.ma",
-          "User-Agent": "Mozilla/5.0 HanaaFoodOrderProxy/1.0",
-          ...(clientIp ? { "X-Forwarded-For": clientIp } : {}),
-        },
-        body: JSON.stringify(row),
-        signal: controller.signal,
-      },
-    );
+    const { response, body } = await callDirectWriter({
+      supabaseUrl,
+      anonKey,
+      method: "POST",
+      row,
+    });
 
-    if (response.ok || response.status === 409) {
-      return send(res, 200, { ok: true });
+    if (response.ok) {
+      return send(res, 200, {
+        ok: true,
+        path: body?.path || "supabase-direct-writer",
+      });
     }
 
-    const raw = await response.text();
-    let upstream = null;
-    try {
-      upstream = raw ? JSON.parse(raw) : null;
-    } catch {
-      upstream = raw ? raw.slice(0, 500) : null;
-    }
-
-    return send(res, response.status, {
+    return send(res, response.status, body || {
       ok: false,
-      code: "SUPABASE_ORDER_FAILED",
-      status: response.status,
-      upstream,
+      code: "DIRECT_WRITER_FAILED",
     });
   } catch (error) {
-    const timeout = error?.name === "AbortError";
-    return send(res, timeout ? 504 : 502, {
+    return send(res, error?.name === "AbortError" ? 504 : 502, {
       ok: false,
-      code: timeout ? "SUPABASE_TIMEOUT" : "SUPABASE_NETWORK_ERROR",
+      code: error?.name === "AbortError" ? "DIRECT_WRITER_TIMEOUT" : "DIRECT_WRITER_NETWORK_ERROR",
       message: String(error?.message || error || ""),
     });
-  } finally {
-    clearTimeout(timer);
   }
 }
