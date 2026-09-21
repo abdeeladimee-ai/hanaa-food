@@ -184,32 +184,34 @@ export default function AdminDashboard({ onNavigate }) {
   useEffect(() => {
     let active = true;
 
-    const load = async () => {
+    const loadOrders = async () => {
       try {
-        const [nextOrders, nextStaff] = await Promise.all([
-          listOrders(),
-          refreshStaffAccounts().catch((error) => {
-            console.error("Admin staff sync failed:", error);
-            return [];
-          }),
-        ]);
-
-        if (active) {
-          setOrders(nextOrders);
-          setStaffAccounts(Array.isArray(nextStaff) ? nextStaff : []);
-        }
+        const nextOrders = await listOrders();
+        if (active) setOrders(nextOrders);
       } catch (error) {
-        console.error("Admin Supabase sync failed:", error);
+        console.error("Admin orders sync failed:", error);
       }
     };
 
-    void load();
+    const loadStaffOnce = async () => {
+      try {
+        const nextStaff = await refreshStaffAccounts();
+        if (active) {
+          setStaffAccounts(Array.isArray(nextStaff) ? nextStaff : []);
+        }
+      } catch (error) {
+        console.error("Admin staff sync failed:", error);
+      }
+    };
+
+    void loadOrders();
+    void loadStaffOnce();
 
     let unsubscribe = () => {};
     try {
-      unsubscribe = subscribeOrders(() => void load());
+      unsubscribe = subscribeOrders(() => void loadOrders());
     } catch (error) {
-      console.error("Admin realtime start failed:", error);
+      console.error("Admin polling start failed:", error);
     }
 
     return () => {
