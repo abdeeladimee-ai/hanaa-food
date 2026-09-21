@@ -34,7 +34,7 @@ function hasStaffSession() {
   }
 }
 
-const CUSTOMER_ORDER_TIME_ZONE = "Africa/Casablanca";
+const CUSTOMER_ORDER_TIME_ZONE = "UTC";
 const CUSTOMER_ORDER_OPEN_HOUR = 12;
 const CUSTOMER_ORDER_CLOSE_HOUR = 3;
 
