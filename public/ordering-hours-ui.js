@@ -1,4 +1,6 @@
 (() => {
+  if (/^\/(admin|snack|livreur|login)(\/|$)/.test(window.location.pathname)) return;
+
   const BANNER_ID = "hanaa-ordering-closed-banner";
   const TIME_ZONE = "Africa/Casablanca";
   const TEST_CLOSED = new URLSearchParams(window.location.search).get("testClosed") === "1";

@@ -15,6 +15,8 @@
 
     <script>
       (() => {
+        if (/^\/(admin|snack|livreur|login)(\/|$)/.test(window.location.pathname)) return;
+
         const supportPhones = {
           tadart: { name: "Jnan Tadart", phone: "0522501650" },
           amgala: { name: "Amgala", phone: "0521431103" },
