@@ -95,7 +95,7 @@ const readBranches = () => {
     saved = [];
   }
 
-  return defaultBranches.map((fallback) => {
+  const mergedDefaults = defaultBranches.map((fallback) => {
     const existing = saved.find((item) => item?.id === fallback.id) || {};
 
     const maximumDistanceKm = Number(
@@ -125,6 +125,42 @@ const readBranches = () => {
       },
     };
   });
+
+  const extraSavedBranches = saved
+    .filter(
+      (item) =>
+        item?.id &&
+        !defaultBranches.some((fallback) => fallback.id === item.id),
+    )
+    .map((item) => {
+      const maximumDistanceKm = Number(
+        item?.deliveryPricingSettings?.maximumDistanceKm ??
+          item?.deliveryRadiusKm ??
+          10,
+      );
+
+      return {
+        ...item,
+        isOpen: item.isOpen !== false,
+        deliveryEnabled: item.deliveryEnabled !== false,
+        pickupEnabled: item.pickupEnabled !== false,
+        deliveryRadiusKm: Number.isFinite(maximumDistanceKm)
+          ? maximumDistanceKm
+          : 10,
+        deliveryZones: normalizeZones(item.deliveryZones),
+        deliveryPricingSettings: {
+          baseFee: 10,
+          pricePerKm: 2,
+          minimumFee: 10,
+          ...(item.deliveryPricingSettings || {}),
+          maximumDistanceKm: Number.isFinite(maximumDistanceKm)
+            ? maximumDistanceKm
+            : 10,
+        },
+      };
+    });
+
+  return [...mergedDefaults, ...extraSavedBranches];
 };
 
 const isToday = (value) => {
