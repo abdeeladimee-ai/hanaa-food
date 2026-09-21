@@ -106,7 +106,16 @@ const saveStaffAccounts = (accounts) => {
 
 const readRawSession = () => {
   try {
-    return JSON.parse(sessionStorage.getItem(sessionKey) || "null");
+    const persistent = localStorage.getItem(sessionKey);
+    if (persistent) return JSON.parse(persistent);
+
+    const legacy = sessionStorage.getItem(sessionKey);
+    if (!legacy) return null;
+
+    const parsed = JSON.parse(legacy);
+    localStorage.setItem(sessionKey, legacy);
+    sessionStorage.removeItem(sessionKey);
+    return parsed;
   } catch {
     return null;
   }
@@ -279,7 +288,7 @@ export const authorizedPath = (path, session) => {
 
 export const getSession = () => {
   try {
-    const session = JSON.parse(sessionStorage.getItem(sessionKey) || "null");
+    const session = readRawSession();
 
     if (!session?.role) return null;
 
@@ -287,6 +296,7 @@ export const getSession = () => {
     if (!role) return null;
 
     if (role === "ADMIN" && !session.cloudToken) {
+      localStorage.removeItem(sessionKey);
       sessionStorage.removeItem(sessionKey);
       return null;
     }
@@ -318,7 +328,7 @@ export const signIn = async (identifier, password) => {
         authenticatedAt: new Date().toISOString(),
       };
 
-      sessionStorage.setItem(sessionKey, JSON.stringify(session));
+      localStorage.setItem(sessionKey, JSON.stringify(session));
 
       if (session.role === "ADMIN" && session.cloudToken) {
         try {
@@ -373,7 +383,7 @@ export const signIn = async (identifier, password) => {
     authenticatedAt: new Date().toISOString(),
   };
 
-  sessionStorage.setItem(sessionKey, JSON.stringify(session));
+  localStorage.setItem(sessionKey, JSON.stringify(session));
   return session;
 };
 
@@ -389,6 +399,7 @@ export const signOut = () => {
     }
   }
 
+  localStorage.removeItem(sessionKey);
   sessionStorage.removeItem(sessionKey);
 };
 
