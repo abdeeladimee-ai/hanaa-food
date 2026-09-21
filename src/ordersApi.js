@@ -2,7 +2,7 @@ import { requireSupabase } from "./supabase";
 
 const TABLE = "orders";
 const DEFAULT_POLL_INTERVAL_MS = 60000;
-const CUSTOMER_TRACKING_POLL_INTERVAL_MS = 20000;
+const CUSTOMER_TRACKING_POLL_INTERVAL_MS = 30000;
 const MAX_POLL_BACKOFF_MS = 120000;
 const SUPABASE_REQUEST_TIMEOUT_MS = 8000;
 const STAFF_SESSION_KEY = "hanaa-auth-session";
@@ -418,8 +418,8 @@ export async function updateExistingOrder(order) {
 
 function baseOrdersPollInterval() {
   const path = window.location.pathname;
-  if (path === "/snack") return 10000;
-  if (path === "/livreur") return 15000;
+  if (path === "/snack") return 20000;
+  if (path === "/livreur") return 20000;
   return DEFAULT_POLL_INTERVAL_MS;
 }
 
