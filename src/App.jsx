@@ -949,25 +949,6 @@ function App() {
         .filter((item) => item.quantity > 0),
     );
   const place = async (details) => {
-    const rawCooldownPhone = String(details?.phone || "").replace(/[^0-9]/g, "");
-    const normalizedCooldownPhone = /^212[67]\d{8}$/.test(rawCooldownPhone)
-      ? `0${rawCooldownPhone.slice(3)}`
-      : rawCooldownPhone;
-    const cooldownKey = `hanaa-order-cooldown:${normalizedCooldownPhone || "device"}`;
-    const cooldownUntil = Number(localStorage.getItem(cooldownKey) || 0);
-    const cooldownRemainingMs = cooldownUntil - Date.now();
-
-    if (cooldownRemainingMs > 0) {
-      const totalSeconds = Math.ceil(cooldownRemainingMs / 1000);
-      const minutes = Math.floor(totalSeconds / 60);
-      const seconds = totalSeconds % 60;
-
-      window.alert(
-        `Sber chwia 😊 T9dar tdir commande okhra mn ba3d ${minutes}:${String(seconds).padStart(2, "0")}.`,
-      );
-      return;
-    }
-
     const unavailableItems = cart.filter((cartItem) => {
       const product = products.find((item) => item.id === cartItem.productId);
       return isProductRuptureAtBranch(product, branch);
@@ -1003,12 +984,9 @@ function App() {
       createdAt: new Date().toISOString(),
     };
     try {
-      localStorage.setItem(cooldownKey, String(Date.now() + 7 * 60 * 1000));
       const savedOrder = await createOrder(next);
-      localStorage.setItem(cooldownKey, String(Date.now() + 7 * 60 * 1000));
       setOrder(savedOrder);
     } catch (error) {
-      localStorage.removeItem(cooldownKey);
       console.error("Supabase order create failed:", error);
       if (
         error?.code === "CUSTOMER_ORDERING_CLOSED" ||
