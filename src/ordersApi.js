@@ -1,7 +1,8 @@
 import { requireSupabase } from "./supabase";
 
 const TABLE = "orders";
-const POLL_INTERVAL_MS = 60000;
+const DEFAULT_POLL_INTERVAL_MS = 60000;
+const CUSTOMER_TRACKING_POLL_INTERVAL_MS = 20000;
 const REALTIME_DEBOUNCE_MS = 3000;
 const STAFF_SESSION_KEY = "hanaa-auth-session";
 const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
@@ -282,7 +283,7 @@ export async function createOrder(order) {
     const runInsert = async () => {
       const result = await supabase
         .from(TABLE)
-        .insert(row);
+        .upsert(row, { onConflict: "id" });
 
       if (!result.error) return result;
 
@@ -294,15 +295,9 @@ export async function createOrder(order) {
       if (!transientStatus && !transientMessage) return result;
 
       await new Promise((resolve) => window.setTimeout(resolve, 1400));
-      const retry = await supabase
+      return supabase
         .from(TABLE)
-        .insert(row);
-
-      if (retry.error?.code === "23505") {
-        return { ...retry, error: null };
-      }
-
-      return retry;
+        .upsert(row, { onConflict: "id" });
     };
 
     const { error } = await runInsert();
@@ -376,12 +371,20 @@ function scheduleOrdersNotification(payload) {
 function startSharedOrdersSubscription() {
   if (sharedOrdersPollTimer != null || !ordersSubscribers.size) return;
 
-  // Polling-only mode: avoid Realtime reconnect storms when Supabase Gateway
-  // is degraded. One shared timer serves all subscribers in this tab.
+  const path = window.location.pathname;
+  const pollIntervalMs =
+    path === "/snack"
+      ? 10000
+      : path === "/livreur"
+        ? 15000
+        : DEFAULT_POLL_INTERVAL_MS;
+
+  // Polling-only mode: avoid Realtime reconnect storms while keeping
+  // cashier and driver screens responsive.
   sharedOrdersPollTimer = window.setInterval(() => {
     if (document.visibilityState !== "visible") return;
     scheduleOrdersNotification({ type: "poll" });
-  }, POLL_INTERVAL_MS);
+  }, pollIntervalMs);
 }
 
 function stopSharedOrdersSubscription() {
@@ -435,7 +438,7 @@ export function subscribeOrder(orderId, onChange) {
       .catch((error) => {
         console.error("Order polling fallback failed:", error);
       });
-  }, POLL_INTERVAL_MS);
+  }, CUSTOMER_TRACKING_POLL_INTERVAL_MS);
 
   return () => {
     window.clearInterval(pollTimer);
