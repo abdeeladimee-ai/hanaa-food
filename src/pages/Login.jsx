@@ -11,8 +11,8 @@ export default function Login({ onSuccess }) {
     event.preventDefault();
     setError("");
 
-    let session = await signIn(identifier, password);
-    if (!session) session = signInNamedCashier(identifier, password);
+    let session = signInNamedCashier(identifier, password);
+    if (!session) session = await signIn(identifier, password);
 
     if (!session) {
       setError("Smiya / téléphone / email ou mot de passe incorrect.");

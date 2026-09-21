@@ -30,6 +30,6 @@ export const signInNamedCashier = (identifier, password) => {
     authenticatedAt: new Date().toISOString(),
   };
 
-  sessionStorage.setItem(sessionKey, JSON.stringify(session));
+  localStorage.setItem(sessionKey, JSON.stringify(session));
   return session;
 };
