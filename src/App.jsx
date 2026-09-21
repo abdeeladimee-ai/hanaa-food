@@ -1,15 +1,15 @@
 /* eslint-disable no-irregular-whitespace, no-unused-vars */
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import MapView from "./MapView";
-import RoleWorkflow from "./RoleWorkflow";
-import AdminDashboard from "./pages/AdminDashboard";
 import DeliveryOrders from "./pages/DeliveryOrders";
 import PickupOrders from "./pages/PickupOrders";
 import DriverDashboard from "./pages/DriverDashboard";
-import AdminDirectory from "./pages/AdminDirectory";
-import Login from "./pages/Login";
 import { authorizedPath, getSession, homePathForRole } from "./auth";
+
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const AdminDirectory = lazy(() => import("./pages/AdminDirectory"));
+const Login = lazy(() => import("./pages/Login"));
 
 import { createOrder, getOrder, listOrders, subscribeOrder, subscribeOrders } from "./ordersApi";
 const routeViews = { "/login": "login", "/admin": "admin-dashboard", "/admin/commandes-livraison": "delivery-orders", "/admin/commandes-emporter": "pickup-orders", "/admin/livreurs": "driver-management", "/admin/utilisateurs": "user-management", "/snack": "snack-delivery", "/livreur": "driver" };
@@ -1003,13 +1003,13 @@ function App() {
   };
   return (
     <div className="app">
-      {view === "login" && <Login onSuccess={(nextSession) => { const path = homePathForRole(nextSession.role); setSession(nextSession); window.history.replaceState({}, "", path); setView(routeViews[path]); }} />}
-      {view === "admin-dashboard" && <AdminDashboard onNavigate={navigate} onHome={() => navigate("/")} />}
+      {view === "login" && <Suspense fallback={null}><Login onSuccess={(nextSession) => { const path = homePathForRole(nextSession.role); setSession(nextSession); window.history.replaceState({}, "", path); setView(routeViews[path]); }} /></Suspense>}
+      {view === "admin-dashboard" && <Suspense fallback={null}><AdminDashboard onNavigate={navigate} onHome={() => navigate("/")} /></Suspense>}
       {view === "delivery-orders" && <DeliveryOrders role="admin" session={session} onHome={() => navigate("/admin")} />}
       {view === "pickup-orders" && <PickupOrders role="admin" session={session} onHome={() => navigate("/admin")} />}
       {view === "driver" && <DriverDashboard session={session} onHome={() => navigate("/")} />}
-      {view === "driver-management" && <AdminDirectory type="drivers" onNavigate={navigate} onHome={() => navigate("/admin")} />}
-      {view === "user-management" && <AdminDirectory type="users" onNavigate={navigate} onHome={() => navigate("/admin")} />}
+      {view === "driver-management" && <Suspense fallback={null}><AdminDirectory type="drivers" onNavigate={navigate} onHome={() => navigate("/admin")} /></Suspense>}
+      {view === "user-management" && <Suspense fallback={null}><AdminDirectory type="users" onNavigate={navigate} onHome={() => navigate("/admin")} /></Suspense>}
       {view === "snack-delivery" && <DeliveryOrders role="snack" session={session} onHome={() => navigate("/")} />}
       {["login", "admin-dashboard", "delivery-orders", "pickup-orders", "driver", "driver-management", "user-management", "snack-delivery"].includes(view) ? null : <>
       <header className="navbar">
