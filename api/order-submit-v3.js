@@ -66,7 +66,7 @@ async function writeOrder(row) {
           apikey: SUPABASE_KEY,
           Authorization: `Bearer ${SUPABASE_KEY}`,
           "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates,return=minimal",
+          Prefer: "resolution=merge-duplicates,return=representation",
         },
         body: JSON.stringify(row),
         signal: controller.signal,
@@ -81,6 +81,21 @@ async function writeOrder(row) {
       const error = new Error("ORDER_WRITE_FAILED");
       error.status = response.status;
       error.detail = detail;
+      throw error;
+    }
+
+    let saved = null;
+    try {
+      const body = await response.json();
+      saved = Array.isArray(body) ? body[0] : body;
+    } catch {
+      saved = null;
+    }
+
+    if (!saved || String(saved.id || "") !== String(row.id)) {
+      const error = new Error("ORDER_WRITE_NOT_CONFIRMED");
+      error.status = 503;
+      error.detail = "Supabase did not confirm the persisted order row";
       throw error;
     }
   } finally {
