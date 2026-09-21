@@ -1791,6 +1791,28 @@ function Checkout({
 
           setSubmitting(true);
           try {
+            try {
+              const existingProfile = JSON.parse(
+                localStorage.getItem("hanaa-client-profile") || "{}",
+              );
+              localStorage.setItem(
+                "hanaa-client-profile",
+                JSON.stringify({
+                  ...existingProfile,
+                  name: data.name.trim(),
+                  phone: data.phone.trim(),
+                }),
+              );
+            } catch {
+              localStorage.setItem(
+                "hanaa-client-profile",
+                JSON.stringify({
+                  name: data.name.trim(),
+                  phone: data.phone.trim(),
+                }),
+              );
+            }
+
             await onPlace({
               ...data,
               address: mode === "pickup" ? "" : data.address,
