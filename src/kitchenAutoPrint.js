@@ -72,6 +72,31 @@ function isSnackPage() {
   return typeof window !== "undefined" && window.location.pathname === "/snack";
 }
 
+function currentSnackBranchId() {
+  try {
+    const raw =
+      localStorage.getItem("hanaa-auth-session") ||
+      sessionStorage.getItem("hanaa-auth-session") ||
+      "null";
+    return String(JSON.parse(raw)?.branchId || "").trim().toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function readCachedSnackOrder(orderId) {
+  try {
+    const branchId = currentSnackBranchId() || "unknown-branch";
+    const key = `hanaa-staff-orders-cache:snack:${branchId}`;
+    const orders = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(orders)
+      ? orders.find((order) => String(order?.id) === String(orderId)) || null
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function clean(value) {
   return String(value ?? "")
     .normalize("NFD")
@@ -391,7 +416,7 @@ async function printKitchenOrder(orderId, { required = false } = {}) {
   inFlight.add(orderId);
 
   try {
-    const order = await getOrder(orderId);
+    const order = readCachedSnackOrder(orderId) || (await getOrder(orderId));
     if (!order) return;
 
     const acceptedTime = acceptedAt(order);
