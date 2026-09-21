@@ -46,8 +46,8 @@ async function callDirectWriter({ supabaseUrl, anonKey, method, row }) {
 }
 
 export default async function handler(req, res) {
-  const supabaseUrl = String(process.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
-  const anonKey = String(process.env.VITE_SUPABASE_ANON_KEY || "");
+  const supabaseUrl = "https://kkmbiiiglgevwehhmtzq.supabase.co";
+  const anonKey = "sb_publishable_cqSPEkE8JbyIu9NasnOMng_GwRMKVFO";
 
   if (!supabaseUrl || !anonKey) {
     return send(res, 500, {
