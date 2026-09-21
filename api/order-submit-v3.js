@@ -59,7 +59,7 @@ async function writeOrder(row) {
 
   try {
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/orders?on_conflict=id`,
+      `${SUPABASE_URL}/rest/v1/orders`,
       {
         method: "POST",
         headers: {
