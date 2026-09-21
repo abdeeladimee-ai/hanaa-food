@@ -19,7 +19,7 @@ function validOrder(row) {
     row &&
       typeof row === "object" &&
       !Array.isArray(row) &&
-      /^HF\d{4}$/i.test(String(row.id || "")) &&
+      /^HF[A-Z0-9]{4,24}$/i.test(String(row.id || "").trim()) &&
       ["delivery", "pickup"].includes(String(row.order_type || "")) &&
       String(row.customer_phone || "").trim() &&
       String(row.branch_id || "").trim(),
@@ -66,7 +66,7 @@ async function writeOrder(row) {
           apikey: SUPABASE_KEY,
           Authorization: `Bearer ${SUPABASE_KEY}`,
           "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates,return=representation",
+          Prefer: "return=representation",
         },
         body: JSON.stringify(row),
         signal: controller.signal,
