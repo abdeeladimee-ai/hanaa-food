@@ -309,13 +309,37 @@ export async function createOrder(order) {
   if (createOrderInFlight) return createOrderInFlight;
 
   const request = (async () => {
-    // Write straight to Supabase from the browser. The old /api/orders
-    // Vercel proxy caused thousands of serverless requests and origin
-    // transfer when Supabase was unavailable. RLS on orders explicitly
-    // allows anon/authenticated inserts, so the proxy is unnecessary.
-    const savedOrder = await upsertOrder(order);
-    rememberClientOrder(savedOrder.id);
-    return savedOrder;
+    const row = toRow(order);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-hanaa-order-client": "hanaa-orders-v2",
+        },
+        body: JSON.stringify(row),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        let body = null;
+        try {
+          body = await response.json();
+        } catch {}
+        const error = new Error(body?.code || `ORDER_WRITE_FAILED_${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+
+      const savedOrder = fromRow(row);
+      rememberClientOrder(savedOrder.id);
+      return savedOrder;
+    } finally {
+      window.clearTimeout(timer);
+    }
   })();
 
   createOrderInFlight = request;
