@@ -965,7 +965,7 @@ function App() {
     }
 
     const next = {
-      id: `HF${Math.floor(1000 + Math.random() * 8999)}`,
+      id: `HF${Date.now().toString(36).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`,
       customerName: details.name,
       customerPhone: details.phone,
       orderType: mode,
