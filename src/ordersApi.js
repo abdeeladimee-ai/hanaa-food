@@ -3,21 +3,19 @@ import { requireSupabase } from "./supabase";
 const TABLE = "orders";
 const DEFAULT_POLL_INTERVAL_MS = 60000;
 const CUSTOMER_TRACKING_POLL_INTERVAL_MS = 20000;
-const REALTIME_DEBOUNCE_MS = 3000;
+const MAX_POLL_BACKOFF_MS = 120000;
+const SUPABASE_REQUEST_TIMEOUT_MS = 8000;
 const STAFF_SESSION_KEY = "hanaa-auth-session";
 const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
 const LEGACY_CLIENT_ORDER_KEY = "hanaa-order";
 
-let listOrdersInFlight = null;
+const listOrdersInFlight = new Map();
 let createOrderInFlight = null;
 const getOrderInFlight = new Map();
 
 const ordersSubscribers = new Set();
-let sharedOrdersChannel = null;
 let sharedOrdersPollTimer = null;
-let sharedOrdersNotifyTimer = null;
-let pendingOrdersPayload = null;
-let sharedOrdersSupabase = null;
+let sharedOrdersFailureCount = 0;
 
 function hasStaffSession() {
   if (typeof window === "undefined") return false;
@@ -206,38 +204,62 @@ const fromRow = (row) => ({
 });
 
 export async function listOrders(options = {}) {
-  if (listOrdersInFlight) return listOrdersInFlight;
+  const staff = hasStaffSession();
+  const clientOrderIds = staff ? [] : readClientOrderIds();
+  const branchId = String(options?.branchId || "").trim();
+  const updatedSince = String(options?.updatedSince || "").trim();
+  const requestedLimit = Number(options?.limit || (staff ? 120 : 50));
+  const limit = Math.max(1, Math.min(200, Number.isFinite(requestedLimit) ? requestedLimit : 120));
+  const requestKey = JSON.stringify({
+    staff,
+    branchId,
+    updatedSince,
+    limit,
+    clientOrderIds: staff ? [] : clientOrderIds,
+  });
+
+  const existing = listOrdersInFlight.get(requestKey);
+  if (existing) return existing;
+
+  if (!staff && !clientOrderIds.length) return [];
 
   const request = (async () => {
     const supabase = requireSupabase();
-    const staff = hasStaffSession();
-    const clientOrderIds = staff ? [] : readClientOrderIds();
-    const branchId = String(options?.branchId || "").trim();
+    const controller = new AbortController();
+    const timer = window.setTimeout(
+      () => controller.abort(),
+      SUPABASE_REQUEST_TIMEOUT_MS,
+    );
 
-    if (!staff && !clientOrderIds.length) return [];
+    try {
+      let query = supabase
+        .from(TABLE)
+        .select("id,payload,created_at,updated_at")
+        .order(updatedSince ? "updated_at" : "created_at", { ascending: false })
+        .limit(limit)
+        .abortSignal(controller.signal);
 
-    let query = supabase
-      .from(TABLE)
-      .select("id,payload,created_at,updated_at")
-      .order("created_at", { ascending: false })
-      .limit(200);
+      if (staff && branchId) query = query.eq("branch_id", branchId);
+      if (updatedSince) query = query.gt("updated_at", updatedSince);
+      if (!staff) query = query.in("id", clientOrderIds);
 
-    if (staff && branchId) query = query.eq("branch_id", branchId);
-    if (!staff) query = query.in("id", clientOrderIds);
+      const { data, error } = await query;
+      if (error) throw error;
 
-    const { data, error } = await query;
-
-    if (error) throw error;
-
-    return (data || []).map(fromRow);
+      return (data || []).map(fromRow);
+    } finally {
+      window.clearTimeout(timer);
+    }
   })();
 
-  listOrdersInFlight = request;
+  listOrdersInFlight.set(requestKey, request);
 
   try {
     return await request;
   } finally {
-    if (listOrdersInFlight === request) listOrdersInFlight = null;
+    if (listOrdersInFlight.get(requestKey) === request) {
+      listOrdersInFlight.delete(requestKey);
+    }
   }
 }
 
@@ -251,15 +273,25 @@ export async function getOrder(orderId) {
   const request = (async () => {
     const supabase = requireSupabase();
 
-    const { data, error } = await supabase
-      .from(TABLE)
-      .select("id,payload,created_at,updated_at")
-      .eq("id", key)
-      .maybeSingle();
+    const controller = new AbortController();
+    const timer = window.setTimeout(
+      () => controller.abort(),
+      SUPABASE_REQUEST_TIMEOUT_MS,
+    );
 
-    if (error) throw error;
+    try {
+      const { data, error } = await supabase
+        .from(TABLE)
+        .select("id,payload,created_at,updated_at")
+        .eq("id", key)
+        .maybeSingle()
+        .abortSignal(controller.signal);
 
-    return data ? fromRow(data) : null;
+      if (error) throw error;
+      return data ? fromRow(data) : null;
+    } finally {
+      window.clearTimeout(timer);
+    }
   })();
 
   getOrderInFlight.set(key, request);
@@ -330,92 +362,111 @@ export async function createOrder(order) {
 export async function upsertOrder(order) {
   const supabase = requireSupabase();
   const row = toRow(order);
+  const controller = new AbortController();
+  const timer = window.setTimeout(
+    () => controller.abort(),
+    SUPABASE_REQUEST_TIMEOUT_MS,
+  );
 
-  const { error } = await supabase
-    .from(TABLE)
-    .upsert(row, { onConflict: "id" });
+  try {
+    const { error } = await supabase
+      .from(TABLE)
+      .upsert(row, { onConflict: "id" })
+      .abortSignal(controller.signal);
 
-  if (error) throw error;
-
-  return fromRow(row);
+    if (error) throw error;
+    return fromRow(row);
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 export async function updateExistingOrder(order) {
   const supabase = requireSupabase();
   const row = toRow(order);
+  const controller = new AbortController();
+  const timer = window.setTimeout(
+    () => controller.abort(),
+    SUPABASE_REQUEST_TIMEOUT_MS,
+  );
 
-  const { error } = await supabase
-    .from(TABLE)
-    .update(row)
-    .eq("id", String(order.id));
+  try {
+    const { error } = await supabase
+      .from(TABLE)
+      .update(row)
+      .eq("id", String(order.id))
+      .abortSignal(controller.signal);
 
-  if (error) throw error;
-
-  return fromRow(row);
-}
-
-function flushOrdersNotification() {
-  sharedOrdersNotifyTimer = null;
-  const payload = pendingOrdersPayload;
-  pendingOrdersPayload = null;
-
-  for (const subscriber of [...ordersSubscribers]) {
-    try {
-      subscriber(payload);
-    } catch (error) {
-      console.error("Order subscriber callback failed:", error);
-    }
+    if (error) throw error;
+    return fromRow(row);
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
-function scheduleOrdersNotification(payload) {
-  pendingOrdersPayload = payload;
-  if (sharedOrdersNotifyTimer != null) return;
+function baseOrdersPollInterval() {
+  const path = window.location.pathname;
+  if (path === "/snack") return 10000;
+  if (path === "/livreur") return 15000;
+  return DEFAULT_POLL_INTERVAL_MS;
+}
 
-  sharedOrdersNotifyTimer = window.setTimeout(
-    flushOrdersNotification,
-    REALTIME_DEBOUNCE_MS,
+async function runOrdersSubscribers() {
+  if (!ordersSubscribers.size) return true;
+
+  const results = await Promise.allSettled(
+    [...ordersSubscribers].map((subscriber) =>
+      Promise.resolve().then(() => subscriber({ type: "poll" })),
+    ),
   );
+
+  return results.some((result) => result.status === "fulfilled");
+}
+
+function scheduleNextOrdersPoll(delayMs) {
+  if (!ordersSubscribers.size) return;
+
+  if (sharedOrdersPollTimer != null) {
+    window.clearTimeout(sharedOrdersPollTimer);
+  }
+
+  sharedOrdersPollTimer = window.setTimeout(async () => {
+    sharedOrdersPollTimer = null;
+
+    if (document.visibilityState !== "visible") {
+      scheduleNextOrdersPoll(baseOrdersPollInterval());
+      return;
+    }
+
+    const success = await runOrdersSubscribers();
+    if (success) {
+      sharedOrdersFailureCount = 0;
+    } else {
+      sharedOrdersFailureCount = Math.min(sharedOrdersFailureCount + 1, 4);
+    }
+
+    const base = baseOrdersPollInterval();
+    const nextDelay = success
+      ? base
+      : Math.min(base * 2 ** sharedOrdersFailureCount, MAX_POLL_BACKOFF_MS);
+
+    scheduleNextOrdersPoll(nextDelay);
+  }, delayMs);
 }
 
 function startSharedOrdersSubscription() {
   if (sharedOrdersPollTimer != null || !ordersSubscribers.size) return;
-
-  const path = window.location.pathname;
-  const pollIntervalMs =
-    path === "/snack"
-      ? 10000
-      : path === "/livreur"
-        ? 15000
-        : DEFAULT_POLL_INTERVAL_MS;
-
-  // Polling-only mode: avoid Realtime reconnect storms while keeping
-  // cashier and driver screens responsive.
-  sharedOrdersPollTimer = window.setInterval(() => {
-    if (document.visibilityState !== "visible") return;
-    scheduleOrdersNotification({ type: "poll" });
-  }, pollIntervalMs);
+  sharedOrdersFailureCount = 0;
+  scheduleNextOrdersPoll(baseOrdersPollInterval());
 }
 
 function stopSharedOrdersSubscription() {
   if (sharedOrdersPollTimer != null) {
-    window.clearInterval(sharedOrdersPollTimer);
+    window.clearTimeout(sharedOrdersPollTimer);
     sharedOrdersPollTimer = null;
   }
 
-  if (sharedOrdersNotifyTimer != null) {
-    window.clearTimeout(sharedOrdersNotifyTimer);
-    sharedOrdersNotifyTimer = null;
-  }
-
-  pendingOrdersPayload = null;
-
-  if (sharedOrdersChannel && sharedOrdersSupabase) {
-    void sharedOrdersSupabase.removeChannel(sharedOrdersChannel);
-  }
-
-  sharedOrdersChannel = null;
-  sharedOrdersSupabase = null;
+  sharedOrdersFailureCount = 0;
 }
 
 export function subscribeOrders(onChange) {
@@ -437,20 +488,44 @@ export function subscribeOrders(onChange) {
 export function subscribeOrder(orderId, onChange) {
   if (!customerCanReadOrder(orderId)) return () => {};
 
-  // Polling-only tracking avoids a dedicated Realtime socket/reconnect loop
-  // for every customer order.
-  const pollTimer = window.setInterval(() => {
-    if (document.visibilityState !== "visible") return;
-    void getOrder(orderId)
-      .then((order) => {
+  let active = true;
+  let timer = null;
+  let failures = 0;
+
+  const schedule = (delayMs) => {
+    if (!active) return;
+    timer = window.setTimeout(async () => {
+      if (!active) return;
+
+      if (document.visibilityState !== "visible") {
+        schedule(CUSTOMER_TRACKING_POLL_INTERVAL_MS);
+        return;
+      }
+
+      try {
+        const order = await getOrder(orderId);
+        failures = 0;
         if (order) onChange?.(order);
-      })
-      .catch((error) => {
+      } catch (error) {
+        failures = Math.min(failures + 1, 4);
         console.error("Order polling fallback failed:", error);
-      });
-  }, CUSTOMER_TRACKING_POLL_INTERVAL_MS);
+      }
+
+      const nextDelay = failures
+        ? Math.min(
+            CUSTOMER_TRACKING_POLL_INTERVAL_MS * 2 ** failures,
+            MAX_POLL_BACKOFF_MS,
+          )
+        : CUSTOMER_TRACKING_POLL_INTERVAL_MS;
+
+      schedule(nextDelay);
+    }, delayMs);
+  };
+
+  schedule(CUSTOMER_TRACKING_POLL_INTERVAL_MS);
 
   return () => {
-    window.clearInterval(pollTimer);
+    active = false;
+    if (timer != null) window.clearTimeout(timer);
   };
 }
