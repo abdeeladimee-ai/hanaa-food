@@ -1,8 +1,8 @@
 const SUPABASE_URL = "https://kkmbiiiglgevwehhmtzq.supabase.co";
 const SUPABASE_KEY = "sb_publishable_cqSPEkE8JbyIu9NasnOMng_GwRMKVFO";
 const CLIENT_VERSION = "hanaa-orders-v3";
-const WINDOW_MS = 10000;
-const MAX_WRITES_PER_WINDOW = 3;
+const WINDOW_MS = 30000;
+const MAX_WRITES_PER_WINDOW = 2;
 const recentByIp = new Map();
 const successfulOrderIds = new Map();
 const inFlightByOrderId = new Map();
