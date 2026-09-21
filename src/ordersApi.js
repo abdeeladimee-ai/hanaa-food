@@ -1,7 +1,7 @@
 import { requireSupabase } from "./supabase";
 
 const TABLE = "orders";
-const POLL_INTERVAL_MS = 60000;
+const POLL_INTERVAL_MS = 15000;
 const REALTIME_DEBOUNCE_MS = 3000;
 const STAFF_SESSION_KEY = "hanaa-auth-session";
 const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
@@ -376,22 +376,10 @@ function scheduleOrdersNotification(payload) {
 }
 
 function startSharedOrdersSubscription() {
-  if (sharedOrdersChannel || sharedOrdersPollTimer != null || !ordersSubscribers.size) return;
+  if (sharedOrdersPollTimer != null || !ordersSubscribers.size) return;
 
-  const supabase = requireSupabase();
-  sharedOrdersSupabase = supabase;
-
-  if (hasStaffSession()) {
-    sharedOrdersChannel = supabase
-      .channel(`hanaa-orders-shared-${Math.random().toString(36).slice(2)}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: TABLE },
-        (payload) => scheduleOrdersNotification(payload),
-      )
-      .subscribe();
-  }
-
+  // Polling-only mode: avoid Realtime reconnect storms when Supabase Gateway
+  // is degraded. One shared timer serves all subscribers in this tab.
   sharedOrdersPollTimer = window.setInterval(() => {
     if (document.visibilityState !== "visible") return;
     scheduleOrdersNotification({ type: "poll" });
@@ -438,28 +426,8 @@ export function subscribeOrders(onChange) {
 export function subscribeOrder(orderId, onChange) {
   if (!customerCanReadOrder(orderId)) return () => {};
 
-  const supabase = requireSupabase();
-
-  const channel = supabase
-    .channel(
-      `hanaa-order-${String(orderId)}-${Math.random()
-        .toString(36)
-        .slice(2)}`,
-    )
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: TABLE,
-        filter: `id=eq.${String(orderId)}`,
-      },
-      (payload) => {
-        if (payload.new?.id) onChange?.(fromRow(payload.new));
-      },
-    )
-    .subscribe();
-
+  // Polling-only tracking avoids a dedicated Realtime socket/reconnect loop
+  // for every customer order.
   const pollTimer = window.setInterval(() => {
     if (document.visibilityState !== "visible") return;
     void getOrder(orderId)
@@ -473,6 +441,5 @@ export function subscribeOrder(orderId, onChange) {
 
   return () => {
     window.clearInterval(pollTimer);
-    void supabase.removeChannel(channel);
   };
 }
