@@ -294,9 +294,15 @@ export async function createOrder(order) {
       if (!transientStatus && !transientMessage) return result;
 
       await new Promise((resolve) => window.setTimeout(resolve, 1400));
-      return supabase
+      const retry = await supabase
         .from(TABLE)
         .insert(row);
+
+      if (retry.error?.code === "23505") {
+        return { ...retry, error: null };
+      }
+
+      return retry;
     };
 
     const { error } = await runInsert();
