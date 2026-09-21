@@ -105,6 +105,7 @@ function kitchenTime(order) {
         year: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
+        timeZone: "UTC",
       });
 }
 
