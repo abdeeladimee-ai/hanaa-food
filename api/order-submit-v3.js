@@ -55,7 +55,7 @@ function allowIp(ip, now) {
 
 async function orderExists(orderId) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4000);
+  const timer = setTimeout(() => controller.abort(), 3000);
 
   try {
     const response = await fetch(
@@ -82,7 +82,7 @@ async function orderExists(orderId) {
 
 async function writeOrder(row) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
+  const timer = setTimeout(() => controller.abort(), 8000);
 
   try {
     const response = await fetch(
@@ -93,7 +93,7 @@ async function writeOrder(row) {
           apikey: SUPABASE_KEY,
           Authorization: `Bearer ${SUPABASE_KEY}`,
           "Content-Type": "application/json",
-          Prefer: "return=representation",
+          Prefer: "return=minimal",
         },
         body: JSON.stringify(row),
         signal: controller.signal,
@@ -115,22 +115,8 @@ async function writeOrder(row) {
       throw error;
     }
 
-    let saved = null;
-    try {
-      const body = await response.json();
-      saved = Array.isArray(body) ? body[0] : body;
-    } catch {
-      saved = null;
-    }
-
-    if (!saved || String(saved.id || "") !== String(row.id)) {
-      if (await orderExists(row.id)) return;
-
-      const error = new Error("ORDER_WRITE_NOT_CONFIRMED");
-      error.status = 503;
-      error.detail = "Supabase did not confirm the persisted order row";
-      throw error;
-    }
+    // A successful PostgREST insert is already the commit acknowledgement.
+    // Only ambiguous failures need the extra existence check below.
   } finally {
     clearTimeout(timer);
   }
@@ -139,11 +125,12 @@ async function writeOrder(row) {
 export default async function handler(req, res) {
   if (req.method === "GET") {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 3000);
     try {
       const response = await fetch(
         `${SUPABASE_URL}/rest/v1/orders?select=id&limit=1`,
         {
+          method: "HEAD",
           headers: {
             apikey: SUPABASE_KEY,
             Authorization: `Bearer ${SUPABASE_KEY}`,
@@ -215,6 +202,13 @@ export default async function handler(req, res) {
       successfulOrderIds.set(id, Date.now());
       return send(res, 200, { ok: true, recovered: true });
     }
+
+    console.error("order-submit-v3 write failed", {
+      name: String(error?.name || ""),
+      message: String(error?.message || "").slice(0, 160),
+      status: Number(error?.status || 0),
+      detail: String(error?.detail || "").slice(0, 160),
+    });
 
     return send(
       res,

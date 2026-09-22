@@ -5,15 +5,17 @@ const DEFAULT_POLL_INTERVAL_MS = 60000;
 const CUSTOMER_TRACKING_POLL_INTERVAL_MS = 30000;
 const MAX_POLL_BACKOFF_MS = 120000;
 const SUPABASE_REQUEST_TIMEOUT_MS = 8000;
-const ORDER_SUBMIT_TIMEOUT_MS = 15000;
-const ORDER_SUBMIT_RETRY_DELAYS_MS = [0, 1500, 3500];
+const ORDER_SUBMIT_TIMEOUT_MS = 12000;
 const RETRYABLE_ORDER_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const STAFF_SESSION_KEY = "hanaa-auth-session";
 const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
 const LEGACY_CLIENT_ORDER_KEY = "hanaa-order";
-const PENDING_ORDER_QUEUE_KEY = "hanaa-pending-order-writes-v1";
-const PENDING_ORDER_QUEUE_LIMIT = 25;
-const PENDING_ORDER_FLUSH_INTERVAL_MS = 30000;
+const PENDING_ORDER_QUEUE_KEY = "hanaa-pending-order-writes-v2";
+const LEGACY_PENDING_ORDER_QUEUE_KEY = "hanaa-pending-order-writes-v1";
+const PENDING_ORDER_QUEUE_LIMIT = 5;
+const PENDING_ORDER_MAX_AGE_MS = 30 * 60 * 1000;
+const LEGACY_PENDING_MIGRATION_MAX_AGE_MS = 10 * 60 * 1000;
+const PENDING_ORDER_FLUSH_INTERVAL_MS = 120000;
 
 const listOrdersInFlight = new Map();
 let createOrderInFlight = null;
@@ -24,6 +26,7 @@ let sharedOrdersPollTimer = null;
 let sharedOrdersFailureCount = 0;
 let pendingOrdersFlushInFlight = null;
 let pendingOrdersFlushTimer = null;
+let pendingOrdersLastAttemptAt = 0;
 
 function readStaffSession() {
   if (typeof window === "undefined") return null;
@@ -76,21 +79,50 @@ function assertCustomerOrderingOpen() {
   }
 }
 
+function normalizePendingOrderRows(saved, maxAgeMs = PENDING_ORDER_MAX_AGE_MS) {
+  if (!Array.isArray(saved)) return [];
+
+  const now = Date.now();
+
+  return saved
+    .map((entry) => {
+      const row = entry?.row && typeof entry.row === "object" ? entry.row : entry;
+      const id = String(row?.id || "").trim();
+      const queuedAt = entry?.queuedAt || new Date().toISOString();
+      const queuedAtMs = Date.parse(queuedAt);
+
+      if (!id || !Number.isFinite(queuedAtMs) || now - queuedAtMs > maxAgeMs) {
+        return null;
+      }
+
+      return { row, queuedAt };
+    })
+    .filter(Boolean)
+    .slice(-PENDING_ORDER_QUEUE_LIMIT);
+}
+
 function readPendingOrderRows() {
   if (typeof window === "undefined") return [];
 
   try {
-    const saved = JSON.parse(localStorage.getItem(PENDING_ORDER_QUEUE_KEY) || "[]");
-    if (!Array.isArray(saved)) return [];
+    let raw = localStorage.getItem(PENDING_ORDER_QUEUE_KEY);
 
-    return saved
-      .map((entry) => {
-        const row = entry?.row && typeof entry.row === "object" ? entry.row : entry;
-        const id = String(row?.id || "").trim();
-        return id ? { row, queuedAt: entry?.queuedAt || new Date().toISOString() } : null;
-      })
-      .filter(Boolean)
-      .slice(-PENDING_ORDER_QUEUE_LIMIT);
+    // The old queue could contain many stale retries. Migrate only the newest
+    // recent order once, then remove v1 so it cannot recreate a request storm.
+    if (raw == null) {
+      const legacyRaw = localStorage.getItem(LEGACY_PENDING_ORDER_QUEUE_KEY);
+      const legacy = JSON.parse(legacyRaw || "[]");
+      const migrated = normalizePendingOrderRows(
+        legacy,
+        LEGACY_PENDING_MIGRATION_MAX_AGE_MS,
+      ).slice(-1);
+
+      localStorage.removeItem(LEGACY_PENDING_ORDER_QUEUE_KEY);
+      localStorage.setItem(PENDING_ORDER_QUEUE_KEY, JSON.stringify(migrated));
+      raw = JSON.stringify(migrated);
+    }
+
+    return normalizePendingOrderRows(JSON.parse(raw || "[]"));
   } catch {
     return [];
   }
@@ -166,22 +198,31 @@ async function flushPendingOrderRows() {
 
   if (pendingOrdersFlushInFlight) return pendingOrdersFlushInFlight;
 
+  const cooldownMs =
+    PENDING_ORDER_FLUSH_INTERVAL_MS - (Date.now() - pendingOrdersLastAttemptAt);
+  if (cooldownMs > 0) {
+    schedulePendingOrdersFlush(cooldownMs);
+    return;
+  }
+
   const request = (async () => {
-    const entries = readPendingOrderRows();
+    const [entry] = readPendingOrderRows();
+    const row = entry?.row;
+    const id = String(row?.id || "").trim();
 
-    for (const entry of entries) {
-      const row = entry?.row;
-      const id = String(row?.id || "").trim();
-      if (!id) continue;
+    if (!id) return;
 
-      try {
-        await submitOrderRow(row);
-        removePendingOrderRow(id);
-        rememberClientOrder(id);
-      } catch (error) {
-        if (!isRetryableOrderError(error)) {
-          console.error("Pending order needs manual attention:", id, error);
-        }
+    // Exactly one recovery write per cycle. A slow backend must never turn
+    // into dozens of simultaneous retries.
+    pendingOrdersLastAttemptAt = Date.now();
+
+    try {
+      await submitOrderRow(row);
+      removePendingOrderRow(id);
+      rememberClientOrder(id);
+    } catch (error) {
+      if (!isRetryableOrderError(error)) {
+        console.error("Pending order needs manual attention:", id, error);
       }
     }
   })();
@@ -205,21 +246,11 @@ function startPendingOrdersRecovery() {
   if (typeof window === "undefined") return;
 
   window.addEventListener("online", () => {
-    void flushPendingOrderRows();
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      void flushPendingOrderRows();
-    }
-  });
-
-  window.addEventListener("focus", () => {
-    void flushPendingOrderRows();
+    schedulePendingOrdersFlush(5000);
   });
 
   if (readPendingOrderRows().length) {
-    schedulePendingOrdersFlush(1500);
+    schedulePendingOrdersFlush(5000);
   }
 }
 
@@ -482,58 +513,39 @@ const wait = (delayMs) =>
   new Promise((resolve) => window.setTimeout(resolve, delayMs));
 
 async function submitOrderRow(row) {
-  let lastError = null;
+  const controller = new AbortController();
+  const timer = window.setTimeout(
+    () => controller.abort(),
+    ORDER_SUBMIT_TIMEOUT_MS,
+  );
 
-  for (let attempt = 0; attempt < ORDER_SUBMIT_RETRY_DELAYS_MS.length; attempt += 1) {
-    const delayMs = ORDER_SUBMIT_RETRY_DELAYS_MS[attempt];
-    if (delayMs) await wait(delayMs);
+  try {
+    const response = await fetch("/api/order-submit-v3", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-hanaa-order-client": "hanaa-orders-v3",
+      },
+      body: JSON.stringify(row),
+      signal: controller.signal,
+    });
 
-    const controller = new AbortController();
-    const timer = window.setTimeout(
-      () => controller.abort(),
-      ORDER_SUBMIT_TIMEOUT_MS,
-    );
+    if (response.ok) return;
 
+    let body = null;
     try {
-      const response = await fetch("/api/order-submit-v3", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-hanaa-order-client": "hanaa-orders-v3",
-        },
-        body: JSON.stringify(row),
-        signal: controller.signal,
-      });
+      body = await response.json();
+    } catch {}
 
-      if (response.ok) return;
-
-      let body = null;
-      try {
-        body = await response.json();
-      } catch {}
-
-      const error = new Error(
-        body?.code || `ORDER_WRITE_FAILED_${response.status}`,
-      );
-      error.status = response.status;
-      lastError = error;
-
-      if (!RETRYABLE_ORDER_STATUSES.has(response.status)) {
-        throw error;
-      }
-    } catch (error) {
-      lastError = error;
-      const retryable = isRetryableOrderError(error);
-
-      if (!retryable) throw error;
-    } finally {
-      window.clearTimeout(timer);
-    }
+    const error = new Error(
+      body?.code || `ORDER_WRITE_FAILED_${response.status}`,
+    );
+    error.status = response.status;
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
   }
-
-  throw lastError || new Error("ORDER_WRITE_FAILED");
 }
-
 export async function createOrder(order) {
   assertCustomerOrderingOpen();
 
@@ -562,7 +574,7 @@ export async function createOrder(order) {
       // Keep the exact same order ID queued. The server endpoint is idempotent,
       // so recovery can safely retry without creating duplicate orders.
       rememberClientOrder(row.id);
-      schedulePendingOrdersFlush(5000);
+      schedulePendingOrdersFlush(30000);
 
       return {
         ...fromRow(row),

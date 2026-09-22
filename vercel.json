@@ -10,12 +10,16 @@
     },
     {
       "src": "/api/order-submit-v3",
-      "methods": ["GET"],
+      "methods": [
+        "GET"
+      ],
       "dest": "/api/order-submit-v3.js"
     },
     {
       "src": "/api/order-submit-v3",
-      "methods": ["POST"],
+      "methods": [
+        "POST"
+      ],
       "has": [
         {
           "type": "header",
@@ -27,7 +31,9 @@
     },
     {
       "src": "/api/order-submit-v3",
-      "methods": ["POST"],
+      "methods": [
+        "POST"
+      ],
       "status": 403,
       "headers": {
         "Cache-Control": "no-store"
@@ -40,7 +46,15 @@
       },
       "continue": true
     },
-    { "handle": "filesystem" },
-    { "src": "/.*", "dest": "/index.html" }
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/.*",
+      "dest": "/index.html"
+    }
+  ],
+  "regions": [
+    "dub1"
   ]
 }
