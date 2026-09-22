@@ -124,11 +124,38 @@ async function writeOrder(row) {
 
 export default async function handler(req, res) {
   if (req.method === "GET") {
-    return send(res, 200, {
-      ok: true,
-      code: "OK",
-      writePath: "direct-supabase-client",
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/orders?select=id&limit=1`,
+        {
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+          signal: controller.signal,
+        },
+      );
+
+      return send(res, response.ok ? 200 : 503, {
+        ok: response.ok,
+        code: response.ok ? "OK" : "SUPABASE_UNAVAILABLE",
+        writePath: "direct-supabase-client",
+      });
+    } catch (error) {
+      return send(res, 503, {
+        ok: false,
+        code:
+          error?.name === "AbortError"
+            ? "SUPABASE_HEALTH_TIMEOUT"
+            : "SUPABASE_HEALTH_ERROR",
+        writePath: "direct-supabase-client",
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   if (req.method !== "POST") {
