@@ -19,8 +19,7 @@
 
   const isClosed = () => {
     if (TEST_CLOSED) return true;
-    const hour = getBusinessHour();
-    return Number.isFinite(hour) && hour >= 3 && hour < 12;
+    return false;
   };
 
   const findCommanderButtons = () =>
