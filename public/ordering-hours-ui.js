@@ -2,6 +2,7 @@
   if (/^\/(admin|snack|livreur|login)(\/|$)/.test(window.location.pathname)) return;
 
   const BANNER_ID = "hanaa-ordering-paused-banner";
+  const PAUSED = false;
   const MESSAGE = "Les commandes sont temporairement indisponibles. Merci de réessayer plus tard.";
 
   const findCommanderButtons = () =>
@@ -38,6 +39,7 @@
   };
 
   const syncUi = () => {
+    if (!PAUSED) return;
     showBanner();
 
     findCommanderButtons().forEach((button) => {
@@ -50,6 +52,7 @@
   document.addEventListener(
     "click",
     (event) => {
+      if (!PAUSED) return;
       const button = event.target.closest?.("button");
       if (!button) return;
       const label = (button.textContent || "").replace(/\s+/g, " ").trim();
