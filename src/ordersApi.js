@@ -169,10 +169,18 @@ function removePendingOrderRow(orderId) {
 
 function isRetryableOrderError(error) {
   const status = Number(error?.status || 0);
+  const code = String(error?.code || "");
+  const message = String(error?.message || "").toLowerCase();
+
   return (
     error?.name === "AbortError" ||
     error instanceof TypeError ||
-    RETRYABLE_ORDER_STATUSES.has(status)
+    RETRYABLE_ORDER_STATUSES.has(status) ||
+    ["53300", "57P01", "57P02", "57P03", "57014"].includes(code) ||
+    message.includes("failed to fetch") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("connection")
   );
 }
 
@@ -513,6 +521,7 @@ const wait = (delayMs) =>
   new Promise((resolve) => window.setTimeout(resolve, delayMs));
 
 async function submitOrderRow(row) {
+  const supabase = requireSupabase();
   const controller = new AbortController();
   const timer = window.setTimeout(
     () => controller.abort(),
@@ -520,28 +529,21 @@ async function submitOrderRow(row) {
   );
 
   try {
-    const response = await fetch("/api/order-submit-v3", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-hanaa-order-client": "hanaa-orders-v3",
-      },
-      body: JSON.stringify(row),
-      signal: controller.signal,
-    });
+    const { error } = await supabase
+      .from(TABLE)
+      .insert(row)
+      .abortSignal(controller.signal);
 
-    if (response.ok) return;
+    if (!error) return;
 
-    let body = null;
-    try {
-      body = await response.json();
-    } catch {}
+    // Retrying the exact same locally queued order is safe: the primary key
+    // makes the insert idempotent. A duplicate means the first attempt landed.
+    if (String(error?.code || "") === "23505") return;
 
-    const error = new Error(
-      body?.code || `ORDER_WRITE_FAILED_${response.status}`,
-    );
-    error.status = response.status;
-    throw error;
+    const wrapped = new Error(error?.message || "ORDER_WRITE_FAILED");
+    wrapped.code = error?.code || "";
+    wrapped.status = Number(error?.status || 0);
+    throw wrapped;
   } finally {
     window.clearTimeout(timer);
   }
