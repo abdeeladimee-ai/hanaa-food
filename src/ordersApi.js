@@ -5,6 +5,9 @@ const DEFAULT_POLL_INTERVAL_MS = 60000;
 const CUSTOMER_TRACKING_POLL_INTERVAL_MS = 30000;
 const MAX_POLL_BACKOFF_MS = 120000;
 const SUPABASE_REQUEST_TIMEOUT_MS = 8000;
+const ORDER_SUBMIT_TIMEOUT_MS = 15000;
+const ORDER_SUBMIT_RETRY_DELAYS_MS = [0, 1500, 3500];
+const RETRYABLE_ORDER_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const STAFF_SESSION_KEY = "hanaa-auth-session";
 const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
 const LEGACY_CLIENT_ORDER_KEY = "hanaa-order";
@@ -323,15 +326,21 @@ export async function getOrder(orderId) {
   }
 }
 
-export async function createOrder(order) {
-  assertCustomerOrderingOpen();
+const wait = (delayMs) =>
+  new Promise((resolve) => window.setTimeout(resolve, delayMs));
 
-  if (createOrderInFlight) return createOrderInFlight;
+async function submitOrderRow(row) {
+  let lastError = null;
 
-  const request = (async () => {
-    const row = toRow(order);
+  for (let attempt = 0; attempt < ORDER_SUBMIT_RETRY_DELAYS_MS.length; attempt += 1) {
+    const delayMs = ORDER_SUBMIT_RETRY_DELAYS_MS[attempt];
+    if (delayMs) await wait(delayMs);
+
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 10000);
+    const timer = window.setTimeout(
+      () => controller.abort(),
+      ORDER_SUBMIT_TIMEOUT_MS,
+    );
 
     try {
       const response = await fetch("/api/order-submit-v3", {
@@ -344,22 +353,52 @@ export async function createOrder(order) {
         signal: controller.signal,
       });
 
-      if (!response.ok) {
-        let body = null;
-        try {
-          body = await response.json();
-        } catch {}
-        const error = new Error(body?.code || `ORDER_WRITE_FAILED_${response.status}`);
-        error.status = response.status;
+      if (response.ok) return;
+
+      let body = null;
+      try {
+        body = await response.json();
+      } catch {}
+
+      const error = new Error(
+        body?.code || `ORDER_WRITE_FAILED_${response.status}`,
+      );
+      error.status = response.status;
+      lastError = error;
+
+      if (!RETRYABLE_ORDER_STATUSES.has(response.status)) {
         throw error;
       }
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.status || 0);
+      const retryable =
+        error?.name === "AbortError" ||
+        error instanceof TypeError ||
+        RETRYABLE_ORDER_STATUSES.has(status);
 
-      const savedOrder = fromRow(row);
-      rememberClientOrder(savedOrder.id);
-      return savedOrder;
+      if (!retryable) throw error;
     } finally {
       window.clearTimeout(timer);
     }
+  }
+
+  throw lastError || new Error("ORDER_WRITE_FAILED");
+}
+
+export async function createOrder(order) {
+  assertCustomerOrderingOpen();
+
+  if (createOrderInFlight) return createOrderInFlight;
+
+  const request = (async () => {
+    const row = toRow(order);
+
+    await submitOrderRow(row);
+
+    const savedOrder = fromRow(row);
+    rememberClientOrder(savedOrder.id);
+    return savedOrder;
   })();
 
   createOrderInFlight = request;
