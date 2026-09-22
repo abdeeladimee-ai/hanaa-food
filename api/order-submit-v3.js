@@ -136,72 +136,13 @@ export default async function handler(req, res) {
     return send(res, 405, { ok: false, code: "METHOD_NOT_ALLOWED" });
   }
 
-  if (String(req.headers["x-hanaa-order-client"] || "") !== CLIENT_VERSION) {
-    return send(res, 410, { ok: false, code: "OLD_CLIENT_DISABLED" });
-  }
 
-  const row = req.body;
-  if (!validOrder(row)) {
-    return send(res, 400, { ok: false, code: "INVALID_ORDER" });
-  }
+  // Order creation moved to direct browser -> Supabase writes. Keeping the
+  // retired POST path alive would let stale tabs recreate the old 5xx storm.
+  return send(res, 410, {
+    ok: false,
+    code: "CLIENT_REFRESH_REQUIRED",
+    refreshRequired: true,
+  });
 
-  const now = Date.now();
-  cleanMaps(now);
-
-  const id = String(row.id);
-
-  if (successfulOrderIds.has(id)) {
-    return send(res, 200, { ok: true, duplicate: true });
-  }
-
-  const existing = inFlightByOrderId.get(id);
-  if (existing) {
-    try {
-      await existing;
-      return send(res, 200, { ok: true, duplicate: true });
-    } catch {
-      return send(res, 503, { ok: false, code: "ORDER_WRITE_FAILED" });
-    }
-  }
-
-  const ip = clientIp(req);
-  if (!allowIp(ip, now)) {
-    return send(res, 429, { ok: false, code: "TOO_MANY_ORDER_ATTEMPTS" });
-  }
-
-  const request = writeOrder(row);
-  inFlightByOrderId.set(id, request);
-
-  try {
-    await request;
-    successfulOrderIds.set(id, Date.now());
-    return send(res, 200, { ok: true });
-  } catch (error) {
-    if (await orderExists(id)) {
-      successfulOrderIds.set(id, Date.now());
-      return send(res, 200, { ok: true, recovered: true });
-    }
-
-    console.error("order-submit-v3 write failed", {
-      name: String(error?.name || ""),
-      message: String(error?.message || "").slice(0, 160),
-      status: Number(error?.status || 0),
-      detail: String(error?.detail || "").slice(0, 160),
-    });
-
-    return send(
-      res,
-      error?.name === "AbortError" ? 504 : (error?.status || 503),
-      {
-        ok: false,
-        code:
-          error?.name === "AbortError"
-            ? "ORDER_WRITE_TIMEOUT"
-            : "ORDER_WRITE_FAILED",
-        detail: error?.detail || "",
-      },
-    );
-  } finally {
-    inFlightByOrderId.delete(id);
-  }
 }

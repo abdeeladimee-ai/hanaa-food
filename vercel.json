@@ -27,7 +27,10 @@
           "value": "hanaa-orders-v3"
         }
       ],
-      "dest": "/api/order-submit-v3.js"
+      "status": 410,
+      "headers": {
+        "Cache-Control": "no-store"
+      }
     },
     {
       "src": "/api/order-submit-v3",
