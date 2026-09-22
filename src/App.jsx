@@ -989,6 +989,12 @@ function App() {
     try {
       const savedOrder = await createOrder(next);
       setOrder(savedOrder);
+
+      if (savedOrder?.pendingSync) {
+        window.alert(
+          "Commande محفوظة فالجهاز. غادي تعاود تتصيفط automatiquement ملي يرجع الاتصال بالـserveur.",
+        );
+      }
     } catch (error) {
       console.error("Supabase order create failed:", error);
       if (
