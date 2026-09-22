@@ -998,6 +998,13 @@ function App() {
     } catch (error) {
       console.error("Supabase order create failed:", error);
       if (
+        error?.code === "CUSTOMER_ORDERING_PAUSED" ||
+        error?.message === "CUSTOMER_ORDERING_PAUSED"
+      ) {
+        window.alert("Les commandes sont temporairement indisponibles. Merci de réessayer plus tard.");
+        return;
+      }
+      if (
         error?.code === "CUSTOMER_ORDERING_CLOSED" ||
         error?.message === "CUSTOMER_ORDERING_CLOSED"
       ) {

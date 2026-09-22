@@ -48,6 +48,7 @@ function hasStaffSession() {
   return ["ADMIN", "SNACK", "LIVREUR"].includes(role);
 }
 
+const CUSTOMER_ORDERING_PAUSED = true;
 const CUSTOMER_ORDER_TIME_ZONE = "UTC";
 const CUSTOMER_ORDER_OPEN_HOUR = 0;
 const CUSTOMER_ORDER_CLOSE_HOUR = 0;
@@ -66,6 +67,12 @@ function getCustomerOrderHour(now = new Date()) {
 
 function assertCustomerOrderingOpen() {
   if (hasStaffSession()) return;
+
+  if (CUSTOMER_ORDERING_PAUSED) {
+    const error = new Error("CUSTOMER_ORDERING_PAUSED");
+    error.code = "CUSTOMER_ORDERING_PAUSED";
+    throw error;
+  }
 
   const hour = getCustomerOrderHour();
   if (
@@ -199,6 +206,7 @@ function schedulePendingOrdersFlush(delayMs = PENDING_ORDER_FLUSH_INTERVAL_MS) {
 
 async function flushPendingOrderRows() {
   if (typeof window === "undefined") return;
+  if (CUSTOMER_ORDERING_PAUSED && !hasStaffSession()) return;
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     schedulePendingOrdersFlush();
     return;
@@ -252,6 +260,7 @@ async function flushPendingOrderRows() {
 
 function startPendingOrdersRecovery() {
   if (typeof window === "undefined") return;
+  if (CUSTOMER_ORDERING_PAUSED && !hasStaffSession()) return;
 
   window.addEventListener("online", () => {
     schedulePendingOrdersFlush(5000);
