@@ -523,7 +523,6 @@ async function submitOrderRow(row) {
       }
     } catch (error) {
       lastError = error;
-      const status = Number(error?.status || 0);
       const retryable = isRetryableOrderError(error);
 
       if (!retryable) throw error;
