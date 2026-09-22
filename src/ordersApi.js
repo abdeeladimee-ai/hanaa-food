@@ -41,8 +41,8 @@ function hasStaffSession() {
 }
 
 const CUSTOMER_ORDER_TIME_ZONE = "UTC";
-const CUSTOMER_ORDER_OPEN_HOUR = 12;
-const CUSTOMER_ORDER_CLOSE_HOUR = 3;
+const CUSTOMER_ORDER_OPEN_HOUR = 0;
+const CUSTOMER_ORDER_CLOSE_HOUR = 0;
 
 function getCustomerOrderHour(now = new Date()) {
   const part = new Intl.DateTimeFormat("en-GB", {
