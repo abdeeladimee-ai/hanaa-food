@@ -3,7 +3,9 @@ import { requireSupabase } from "./supabase";
 const TABLE = "orders";
 const DEFAULT_POLL_INTERVAL_MS = 60000;
 const CUSTOMER_TRACKING_POLL_INTERVAL_MS = 30000;
-const MAX_POLL_BACKOFF_MS = 120000;
+const MAX_POLL_BACKOFF_MS = 600000;
+const DATA_API_CIRCUIT_KEY = "hanaa-data-api-circuit-v1";
+const DATA_API_FAILURE_BASE_MS = 60000;
 const SUPABASE_REQUEST_TIMEOUT_MS = 8000;
 const ORDER_SUBMIT_TIMEOUT_MS = 12000;
 const RETRYABLE_ORDER_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -648,11 +650,56 @@ export async function updateExistingOrder(order) {
   }
 }
 
+function readDataApiCircuit() {
+  if (typeof window === "undefined") return { failures: 0, until: 0 };
+
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DATA_API_CIRCUIT_KEY) || "{}");
+    return {
+      failures: Math.max(0, Number(parsed?.failures || 0)),
+      until: Math.max(0, Number(parsed?.until || 0)),
+    };
+  } catch {
+    return { failures: 0, until: 0 };
+  }
+}
+
+function dataApiCircuitDelay() {
+  const circuit = readDataApiCircuit();
+  return Math.max(0, circuit.until - Date.now());
+}
+
+function recordDataApiPollSuccess() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(DATA_API_CIRCUIT_KEY);
+  } catch {}
+}
+
+function recordDataApiPollFailure() {
+  if (typeof window === "undefined") return;
+
+  const current = readDataApiCircuit();
+  const failures = Math.min(current.failures + 1, 5);
+  const delay = Math.min(
+    DATA_API_FAILURE_BASE_MS * 2 ** (failures - 1),
+    MAX_POLL_BACKOFF_MS,
+  );
+
+  try {
+    localStorage.setItem(
+      DATA_API_CIRCUIT_KEY,
+      JSON.stringify({ failures, until: Date.now() + delay }),
+    );
+  } catch {}
+}
+
 function baseOrdersPollInterval() {
   const path = window.location.pathname;
   if (path === "/snack") return 20000;
   if (path === "/livreur") return 20000;
-  return DEFAULT_POLL_INTERVAL_MS;
+  if (path === "/admin") return 60000;
+  return 90000;
 }
 
 async function runOrdersSubscribers() {
@@ -682,17 +729,28 @@ function scheduleNextOrdersPoll(delayMs) {
       return;
     }
 
+    const circuitDelay = dataApiCircuitDelay();
+    if (circuitDelay > 0) {
+      scheduleNextOrdersPoll(circuitDelay);
+      return;
+    }
+
     const success = await runOrdersSubscribers();
     if (success) {
       sharedOrdersFailureCount = 0;
+      recordDataApiPollSuccess();
     } else {
-      sharedOrdersFailureCount = Math.min(sharedOrdersFailureCount + 1, 4);
+      sharedOrdersFailureCount = Math.min(sharedOrdersFailureCount + 1, 5);
+      recordDataApiPollFailure();
     }
 
     const base = baseOrdersPollInterval();
     const nextDelay = success
       ? base
-      : Math.min(base * 2 ** sharedOrdersFailureCount, MAX_POLL_BACKOFF_MS);
+      : Math.max(
+          dataApiCircuitDelay(),
+          Math.min(base * 2 ** sharedOrdersFailureCount, MAX_POLL_BACKOFF_MS),
+        );
 
     scheduleNextOrdersPoll(nextDelay);
   }, delayMs);
@@ -746,19 +804,30 @@ export function subscribeOrder(orderId, onChange) {
         return;
       }
 
+      const circuitDelay = dataApiCircuitDelay();
+      if (circuitDelay > 0) {
+        schedule(circuitDelay);
+        return;
+      }
+
       try {
         const order = await getOrder(orderId);
         failures = 0;
+        recordDataApiPollSuccess();
         if (order) onChange?.(order);
       } catch (error) {
-        failures = Math.min(failures + 1, 4);
+        failures = Math.min(failures + 1, 5);
+        recordDataApiPollFailure();
         console.error("Order polling fallback failed:", error);
       }
 
       const nextDelay = failures
-        ? Math.min(
-            CUSTOMER_TRACKING_POLL_INTERVAL_MS * 2 ** failures,
-            MAX_POLL_BACKOFF_MS,
+        ? Math.max(
+            dataApiCircuitDelay(),
+            Math.min(
+              CUSTOMER_TRACKING_POLL_INTERVAL_MS * 2 ** failures,
+              MAX_POLL_BACKOFF_MS,
+            ),
           )
         : CUSTOMER_TRACKING_POLL_INTERVAL_MS;
 
