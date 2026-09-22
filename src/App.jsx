@@ -712,19 +712,6 @@ function App() {
   const [modal, setModal] = useState(null);
   const [order, setOrder] = useState(null);
 
-  useEffect(() => {
-    if (!order?.id) return undefined;
-
-    try {
-      return subscribeOrder(order.id, (updatedOrder) => {
-        setOrder(updatedOrder);
-      });
-    } catch (error) {
-      console.error("Order realtime subscription failed:", error);
-      return undefined;
-    }
-  }, [order?.id]);
-
   const [favorites, setFavorites] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("hanaa-favorites") || "[]");
