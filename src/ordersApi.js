@@ -11,6 +11,9 @@ const RETRYABLE_ORDER_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const STAFF_SESSION_KEY = "hanaa-auth-session";
 const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
 const LEGACY_CLIENT_ORDER_KEY = "hanaa-order";
+const PENDING_ORDER_QUEUE_KEY = "hanaa-pending-order-writes-v1";
+const PENDING_ORDER_QUEUE_LIMIT = 25;
+const PENDING_ORDER_FLUSH_INTERVAL_MS = 30000;
 
 const listOrdersInFlight = new Map();
 let createOrderInFlight = null;
@@ -19,6 +22,8 @@ const getOrderInFlight = new Map();
 const ordersSubscribers = new Set();
 let sharedOrdersPollTimer = null;
 let sharedOrdersFailureCount = 0;
+let pendingOrdersFlushInFlight = null;
+let pendingOrdersFlushTimer = null;
 
 function readStaffSession() {
   if (typeof window === "undefined") return null;
@@ -68,6 +73,153 @@ function assertCustomerOrderingOpen() {
     const error = new Error("CUSTOMER_ORDERING_CLOSED");
     error.code = "CUSTOMER_ORDERING_CLOSED";
     throw error;
+  }
+}
+
+function readPendingOrderRows() {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(PENDING_ORDER_QUEUE_KEY) || "[]");
+    if (!Array.isArray(saved)) return [];
+
+    return saved
+      .map((entry) => {
+        const row = entry?.row && typeof entry.row === "object" ? entry.row : entry;
+        const id = String(row?.id || "").trim();
+        return id ? { row, queuedAt: entry?.queuedAt || new Date().toISOString() } : null;
+      })
+      .filter(Boolean)
+      .slice(-PENDING_ORDER_QUEUE_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function writePendingOrderRows(entries) {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.setItem(
+      PENDING_ORDER_QUEUE_KEY,
+      JSON.stringify(entries.slice(-PENDING_ORDER_QUEUE_LIMIT)),
+    );
+  } catch {
+    // If local storage is unavailable, the normal network path still runs.
+  }
+}
+
+function enqueuePendingOrderRow(row) {
+  if (typeof window === "undefined") return;
+
+  const id = String(row?.id || "").trim();
+  if (!id) return;
+
+  const entries = readPendingOrderRows().filter(
+    (entry) => String(entry?.row?.id || "") !== id,
+  );
+
+  entries.push({ row, queuedAt: new Date().toISOString() });
+  writePendingOrderRows(entries);
+}
+
+function removePendingOrderRow(orderId) {
+  if (typeof window === "undefined") return;
+
+  const id = String(orderId || "").trim();
+  if (!id) return;
+
+  const entries = readPendingOrderRows().filter(
+    (entry) => String(entry?.row?.id || "") !== id,
+  );
+  writePendingOrderRows(entries);
+}
+
+function isRetryableOrderError(error) {
+  const status = Number(error?.status || 0);
+  return (
+    error?.name === "AbortError" ||
+    error instanceof TypeError ||
+    RETRYABLE_ORDER_STATUSES.has(status)
+  );
+}
+
+function schedulePendingOrdersFlush(delayMs = PENDING_ORDER_FLUSH_INTERVAL_MS) {
+  if (typeof window === "undefined") return;
+
+  if (pendingOrdersFlushTimer != null) {
+    window.clearTimeout(pendingOrdersFlushTimer);
+  }
+
+  pendingOrdersFlushTimer = window.setTimeout(() => {
+    pendingOrdersFlushTimer = null;
+    void flushPendingOrderRows();
+  }, delayMs);
+}
+
+async function flushPendingOrderRows() {
+  if (typeof window === "undefined") return;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    schedulePendingOrdersFlush();
+    return;
+  }
+
+  if (pendingOrdersFlushInFlight) return pendingOrdersFlushInFlight;
+
+  const request = (async () => {
+    const entries = readPendingOrderRows();
+
+    for (const entry of entries) {
+      const row = entry?.row;
+      const id = String(row?.id || "").trim();
+      if (!id) continue;
+
+      try {
+        await submitOrderRow(row);
+        removePendingOrderRow(id);
+        rememberClientOrder(id);
+      } catch (error) {
+        if (!isRetryableOrderError(error)) {
+          console.error("Pending order needs manual attention:", id, error);
+        }
+      }
+    }
+  })();
+
+  pendingOrdersFlushInFlight = request;
+
+  try {
+    await request;
+  } finally {
+    if (pendingOrdersFlushInFlight === request) {
+      pendingOrdersFlushInFlight = null;
+    }
+
+    if (readPendingOrderRows().length) {
+      schedulePendingOrdersFlush();
+    }
+  }
+}
+
+function startPendingOrdersRecovery() {
+  if (typeof window === "undefined") return;
+
+  window.addEventListener("online", () => {
+    void flushPendingOrderRows();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      void flushPendingOrderRows();
+    }
+  });
+
+  window.addEventListener("focus", () => {
+    void flushPendingOrderRows();
+  });
+
+  if (readPendingOrderRows().length) {
+    schedulePendingOrdersFlush(1500);
   }
 }
 
@@ -372,10 +524,7 @@ async function submitOrderRow(row) {
     } catch (error) {
       lastError = error;
       const status = Number(error?.status || 0);
-      const retryable =
-        error?.name === "AbortError" ||
-        error instanceof TypeError ||
-        RETRYABLE_ORDER_STATUSES.has(status);
+      const retryable = isRetryableOrderError(error);
 
       if (!retryable) throw error;
     } finally {
@@ -394,11 +543,33 @@ export async function createOrder(order) {
   const request = (async () => {
     const row = toRow(order);
 
-    await submitOrderRow(row);
+    // Persist locally before touching the network so a refresh/crash cannot
+    // silently lose a customer's order.
+    enqueuePendingOrderRow(row);
 
-    const savedOrder = fromRow(row);
-    rememberClientOrder(savedOrder.id);
-    return savedOrder;
+    try {
+      await submitOrderRow(row);
+      removePendingOrderRow(row.id);
+
+      const savedOrder = fromRow(row);
+      rememberClientOrder(savedOrder.id);
+      return savedOrder;
+    } catch (error) {
+      if (!isRetryableOrderError(error)) {
+        removePendingOrderRow(row.id);
+        throw error;
+      }
+
+      // Keep the exact same order ID queued. The server endpoint is idempotent,
+      // so recovery can safely retry without creating duplicate orders.
+      rememberClientOrder(row.id);
+      schedulePendingOrdersFlush(5000);
+
+      return {
+        ...fromRow(row),
+        pendingSync: true,
+      };
+    }
   })();
 
   createOrderInFlight = request;
@@ -580,3 +751,6 @@ export function subscribeOrder(orderId, onChange) {
     if (timer != null) window.clearTimeout(timer);
   };
 }
+
+
+startPendingOrdersRecovery();
