@@ -2,7 +2,7 @@ const SUPABASE_URL = "https://kkmbiiiglgevwehhmtzq.supabase.co";
 const SUPABASE_KEY = "sb_publishable_cqSPEkE8JbyIu9NasnOMng_GwRMKVFO";
 const CLIENT_VERSION = "hanaa-orders-v3";
 const WINDOW_MS = 30000;
-const MAX_WRITES_PER_WINDOW = 2;
+const MAX_WRITES_PER_WINDOW = 4;
 const recentByIp = new Map();
 const successfulOrderIds = new Map();
 const inFlightByOrderId = new Map();
@@ -53,6 +53,33 @@ function allowIp(ip, now) {
   return true;
 }
 
+async function orderExists(orderId) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/orders?id=eq.${encodeURIComponent(orderId)}&select=id&limit=1`,
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+        signal: controller.signal,
+      },
+    );
+
+    if (!response.ok) return false;
+
+    const rows = await response.json();
+    return Array.isArray(rows) && rows.some((row) => String(row?.id) === String(orderId));
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function writeOrder(row) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
@@ -74,6 +101,10 @@ async function writeOrder(row) {
     );
 
     if (!response.ok) {
+      if (response.status === 409 && (await orderExists(row.id))) {
+        return;
+      }
+
       let detail = "";
       try {
         detail = (await response.text()).slice(0, 250);
@@ -93,6 +124,8 @@ async function writeOrder(row) {
     }
 
     if (!saved || String(saved.id || "") !== String(row.id)) {
+      if (await orderExists(row.id)) return;
+
       const error = new Error("ORDER_WRITE_NOT_CONFIRMED");
       error.status = 503;
       error.detail = "Supabase did not confirm the persisted order row";
@@ -178,6 +211,11 @@ export default async function handler(req, res) {
     successfulOrderIds.set(id, Date.now());
     return send(res, 200, { ok: true });
   } catch (error) {
+    if (await orderExists(id)) {
+      successfulOrderIds.set(id, Date.now());
+      return send(res, 200, { ok: true, recovered: true });
+    }
+
     return send(
       res,
       error?.name === "AbortError" ? 504 : (error?.status || 503),
