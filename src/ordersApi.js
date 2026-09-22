@@ -50,7 +50,7 @@ function hasStaffSession() {
   return ["ADMIN", "SNACK", "LIVREUR"].includes(role);
 }
 
-const CUSTOMER_ORDERING_PAUSED = true;
+const CUSTOMER_ORDERING_PAUSED = false;
 const CUSTOMER_ORDER_TIME_ZONE = "UTC";
 const CUSTOMER_ORDER_OPEN_HOUR = 0;
 const CUSTOMER_ORDER_CLOSE_HOUR = 0;
