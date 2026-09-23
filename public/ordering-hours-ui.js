@@ -2,8 +2,9 @@
   if (/^\/(admin|snack|livreur|login)(\/|$)/.test(window.location.pathname)) return;
 
   const BANNER_ID = "hanaa-ordering-paused-banner";
-  const PAUSED = false;
   const MESSAGE = "Les commandes sont temporairement indisponibles. Merci de réessayer plus tard.";
+  let paused = true;
+  let refreshTimer = null;
 
   const findCommanderButtons = () =>
     [...document.querySelectorAll("button")].filter((button) => {
@@ -13,12 +14,9 @@
 
   const showBanner = () => {
     const navbar = document.querySelector(".navbar");
-    if (!navbar) return;
+    if (!navbar || document.getElementById(BANNER_ID)) return;
 
-    let banner = document.getElementById(BANNER_ID);
-    if (banner) return;
-
-    banner = document.createElement("div");
+    const banner = document.createElement("div");
     banner.id = BANNER_ID;
     banner.setAttribute("role", "status");
     banner.setAttribute("aria-live", "polite");
@@ -38,21 +36,52 @@
     navbar.insertAdjacentElement("afterend", banner);
   };
 
+  const hideBanner = () => {
+    document.getElementById(BANNER_ID)?.remove();
+  };
+
   const syncUi = () => {
-    if (!PAUSED) return;
-    showBanner();
+    if (paused) showBanner();
+    else hideBanner();
 
     findCommanderButtons().forEach((button) => {
-      button.disabled = true;
-      button.title = MESSAGE;
-      button.setAttribute("aria-disabled", "true");
+      if (paused) {
+        if (!button.dataset.hanaaOrderingPaused) {
+          button.dataset.hanaaOrderingPaused = "1";
+          button.dataset.hanaaWasDisabled = button.disabled ? "1" : "0";
+        }
+        button.disabled = true;
+        button.title = MESSAGE;
+        button.setAttribute("aria-disabled", "true");
+      } else if (button.dataset.hanaaOrderingPaused) {
+        if (button.dataset.hanaaWasDisabled !== "1") button.disabled = false;
+        button.removeAttribute("title");
+        button.removeAttribute("aria-disabled");
+        delete button.dataset.hanaaOrderingPaused;
+        delete button.dataset.hanaaWasDisabled;
+      }
     });
+  };
+
+  const refreshStatus = async () => {
+    try {
+      const response = await fetch("/api/neon-settings", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && payload?.ok !== false) {
+        paused = payload.paused === true;
+        syncUi();
+      }
+    } catch {
+      // Fail closed if the setting cannot be read while the restaurant is paused.
+      paused = true;
+      syncUi();
+    }
   };
 
   document.addEventListener(
     "click",
     (event) => {
-      if (!PAUSED) return;
+      if (!paused) return;
       const button = event.target.closest?.("button");
       if (!button) return;
       const label = (button.textContent || "").replace(/\s+/g, " ").trim();
@@ -67,7 +96,18 @@
 
   const observer = new MutationObserver(syncUi);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  window.addEventListener("load", syncUi);
+
+  window.addEventListener("load", () => {
+    syncUi();
+    void refreshStatus();
+  });
   window.addEventListener("popstate", () => setTimeout(syncUi, 0));
+
   syncUi();
+  void refreshStatus();
+  refreshTimer = window.setInterval(refreshStatus, 30000);
+
+  window.addEventListener("beforeunload", () => {
+    if (refreshTimer != null) window.clearInterval(refreshTimer);
+  });
 })();
