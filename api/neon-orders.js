@@ -1,11 +1,7 @@
-import crypto from "node:crypto";
 import { ensureSchema, getPool, json } from "../lib/neonDb.js";
 
 const MAX_LIMIT = 200;
 const MAX_ORDER_BYTES = 64 * 1024;
-
-const sha256 = (value) =>
-  crypto.createHash("sha256").update(String(value || "")).digest("hex");
 
 function bodyOf(req) {
   if (!req.body) return {};
@@ -17,27 +13,6 @@ function bodyOf(req) {
   }
 }
 
-function bearer(req) {
-  const value = String(req.headers.authorization || "");
-  return value.startsWith("Bearer ") ? value.slice(7).trim() : "";
-}
-
-async function sessionAccount(req) {
-  const token = bearer(req);
-  if (!token) return null;
-
-  const result = await getPool().query(
-    `select a.*
-       from public.staff_sessions s
-       join public.staff_accounts a on a.id = s.account_id
-      where s.token_hash = $1
-        and s.expires_at > now()
-        and a.active = true
-      limit 1`,
-    [sha256(token)],
-  );
-  return result.rows[0] || null;
-}
 
 function compatibilityStaff(req) {
   const role = String(req.headers["x-hanaa-role"] || "").trim().toUpperCase();
@@ -150,7 +125,7 @@ async function createOrder(req, res) {
 }
 
 async function readOrders(req, res) {
-  const staff = (await sessionAccount(req)) || compatibilityStaff(req);
+  const staff = compatibilityStaff(req);
   const id = String(req.query?.id || "").trim();
   const ids = String(req.query?.ids || "")
     .split(",")
@@ -205,7 +180,7 @@ async function readOrders(req, res) {
 }
 
 async function updateOrder(req, res) {
-  const staff = (await sessionAccount(req)) || compatibilityStaff(req);
+  const staff = compatibilityStaff(req);
   if (!staff || !["ADMIN","SNACK","LIVREUR"].includes(staff.role)) {
     return json(res, 401, { ok: false, code: "STAFF_AUTH_REQUIRED" });
   }
