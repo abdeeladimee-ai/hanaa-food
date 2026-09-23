@@ -39,6 +39,17 @@ async function sessionAccount(req) {
   return result.rows[0] || null;
 }
 
+function compatibilityStaff(req) {
+  const role = String(req.headers["x-hanaa-role"] || "").trim().toUpperCase();
+  if (!["ADMIN", "SNACK", "LIVREUR"].includes(role)) return null;
+
+  return {
+    role,
+    branch_id: String(req.headers["x-hanaa-branch"] || "").trim() || null,
+    compatibility: true,
+  };
+}
+
 function validOrder(row) {
   return Boolean(
     row &&
@@ -139,7 +150,7 @@ async function createOrder(req, res) {
 }
 
 async function readOrders(req, res) {
-  const staff = await sessionAccount(req);
+  const staff = (await sessionAccount(req)) || compatibilityStaff(req);
   const id = String(req.query?.id || "").trim();
   const ids = String(req.query?.ids || "")
     .split(",")
@@ -194,7 +205,7 @@ async function readOrders(req, res) {
 }
 
 async function updateOrder(req, res) {
-  const staff = await sessionAccount(req);
+  const staff = (await sessionAccount(req)) || compatibilityStaff(req);
   if (!staff || !["ADMIN","SNACK","LIVREUR"].includes(staff.role)) {
     return json(res, 401, { ok: false, code: "STAFF_AUTH_REQUIRED" });
   }
