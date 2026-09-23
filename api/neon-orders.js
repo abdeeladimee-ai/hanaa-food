@@ -112,6 +112,14 @@ async function createOrder(req, res) {
     return json(res, 413, { ok: false, code: "ORDER_TOO_LARGE" });
   }
 
+  const ordering = await getPool().query(
+    "select value from public.app_settings where key = $1 limit 1",
+    ["customer_ordering"],
+  );
+  if (ordering.rows[0]?.value?.paused === true) {
+    return json(res, 423, { ok: false, code: "CUSTOMER_ORDERING_PAUSED" });
+  }
+
   const existing = await getPool().query(
     "select id from public.orders where id = $1 limit 1",
     [String(row.id)],
