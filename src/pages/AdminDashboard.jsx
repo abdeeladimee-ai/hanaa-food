@@ -218,6 +218,32 @@ export default function AdminDashboard({ onNavigate }) {
   );
   const [branchSettings, setBranchSettings] = useState(readBranches);
   const [savedMessage, setSavedMessage] = useState("");
+  const [orderingPaused, setOrderingPaused] = useState(true);
+  const [orderingSaving, setOrderingSaving] = useState(false);
+  const [orderingMessage, setOrderingMessage] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    const loadOrderingStatus = async () => {
+      try {
+        const response = await fetch("/api/neon-settings", { cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.ok === false) throw new Error(payload?.code || "SETTINGS_FAILED");
+        if (active) setOrderingPaused(payload.paused === true);
+      } catch (error) {
+        console.error("Ordering status sync failed:", error);
+      }
+    };
+
+    void loadOrderingStatus();
+    const timer = window.setInterval(loadOrderingStatus, 30000);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -480,6 +506,39 @@ export default function AdminDashboard({ onNavigate }) {
     });
   };
 
+  const toggleCustomerOrdering = async () => {
+    const nextPaused = !orderingPaused;
+    setOrderingSaving(true);
+    setOrderingMessage("");
+
+    try {
+      const response = await fetch("/api/neon-settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Hanaa-Role": "ADMIN",
+        },
+        body: JSON.stringify({ paused: nextPaused }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.code || "SETTINGS_UPDATE_FAILED");
+      }
+
+      setOrderingPaused(payload.paused === true);
+      setOrderingMessage(
+        payload.paused
+          ? "✅ Commandes clients fermées."
+          : "✅ Commandes clients ouvertes.",
+      );
+    } catch (error) {
+      console.error("Ordering setting update failed:", error);
+      setOrderingMessage("❌ Impossible de modifier les commandes.");
+    } finally {
+      setOrderingSaving(false);
+    }
+  };
+
   const updateBranch = (branchId, patch) => {
     setBranchSettings((current) =>
       current.map((branch) =>
@@ -567,6 +626,34 @@ export default function AdminDashboard({ onNavigate }) {
       </header>
 
       <div style={s.actions}>
+        <button
+          type="button"
+          style={{
+            ...s.primary,
+            background: orderingPaused ? "#8f151b" : "#173f2d",
+          }}
+          disabled={orderingSaving}
+          onClick={toggleCustomerOrdering}
+        >
+          {orderingSaving
+            ? "ENREGISTREMENT..."
+            : orderingPaused
+              ? "RÉOUVRIR LES COMMANDES"
+              : "FERMER LES COMMANDES"}
+        </button>
+
+        <span
+          style={{
+            ...s.muted,
+            alignSelf: "center",
+            fontWeight: 800,
+            color: orderingPaused ? "#8f151b" : "#176b45",
+          }}
+        >
+          {orderingPaused ? "● COMMANDES FERMÉES" : "● COMMANDES OUVERTES"}
+          {orderingMessage ? ` — ${orderingMessage}` : ""}
+        </span>
+
         <button
           style={s.primary}
           onClick={() => onNavigate("/admin/commandes-livraison")}
