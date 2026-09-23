@@ -490,7 +490,7 @@ export async function getOrder(orderId) {
   finally { if (getOrderInFlight.get(key) === request) getOrderInFlight.delete(key); }
 }
 
-const wait =const wait = (delayMs) =>
+const wait = (delayMs) =>
   new Promise((resolve) => window.setTimeout(resolve, delayMs));
 
 async function submitOrderRow(row) {
@@ -504,7 +504,7 @@ async function submitOrderRow(row) {
   await apiJson("/api/neon-orders", { method: "POST", body: JSON.stringify({ row }) }, ORDER_SUBMIT_TIMEOUT_MS);
 }
 
-export async function createOrder(order) {export async function createOrder(order) {
+export async function createOrder(order) {
   assertCustomerOrderingOpen();
 
   if (createOrderInFlight) return createOrderInFlight;
@@ -560,7 +560,7 @@ export async function updateExistingOrder(order) {
   return upsertOrder(order);
 }
 
-function readDataApiCircuit() {function readDataApiCircuit() {
+function readDataApiCircuit() {
   if (typeof window === "undefined") return { failures: 0, until: 0 };
 
   try {
