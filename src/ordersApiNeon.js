@@ -412,8 +412,16 @@ const fromRow = (row) => ({
 });
 
 function staffRequestHeaders() {
-  const token = String(readStaffSession()?.cloudToken || "");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const session = readStaffSession();
+  const token = String(session?.cloudToken || "");
+  const role = String(session?.role || "").trim().toUpperCase();
+  const branchId = String(session?.branchId || "").trim();
+
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(role ? { "X-Hanaa-Role": role } : {}),
+    ...(branchId ? { "X-Hanaa-Branch": branchId } : {}),
+  };
 }
 
 async function apiJson(url, options = {}, timeoutMs = SUPABASE_REQUEST_TIMEOUT_MS) {
