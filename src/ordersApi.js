@@ -549,19 +549,20 @@ async function submitOrderRow(row) {
       throw oversized;
     }
 
-    const { error } = await supabase
-      .rpc("create_customer_order", { p_order: row })
-      .abortSignal(controller.signal);
+    const { data, error } = await supabase.functions.invoke("create-order", {
+      body: { row },
+      signal: controller.signal,
+    });
 
-    if (!error) return;
+    if (!error && data?.ok) return;
 
-    // The RPC is idempotent by order ID. A duplicate means the first write
-    // already landed and is safe to treat as success.
-    if (String(error?.code || "") === "23505") return;
-
-    const wrapped = new Error(error?.message || "ORDER_WRITE_FAILED");
-    wrapped.code = error?.code || "";
-    wrapped.status = Number(error?.status || 0);
+    const wrapped = new Error(
+      data?.code || error?.message || "ORDER_WRITE_FAILED",
+    );
+    wrapped.code = data?.code || error?.code || "";
+    wrapped.status = Number(
+      error?.context?.status || error?.status || data?.status || 0,
+    );
     throw wrapped;
   } finally {
     window.clearTimeout(timer);
