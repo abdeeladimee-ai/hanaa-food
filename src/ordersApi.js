@@ -8,6 +8,7 @@ const DATA_API_CIRCUIT_KEY = "hanaa-data-api-circuit-v1";
 const DATA_API_FAILURE_BASE_MS = 60000;
 const SUPABASE_REQUEST_TIMEOUT_MS = 8000;
 const ORDER_SUBMIT_TIMEOUT_MS = 12000;
+const MAX_ORDER_WRITE_BYTES = 64 * 1024;
 const RETRYABLE_ORDER_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const STAFF_SESSION_KEY = "hanaa-auth-session";
 const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
@@ -540,15 +541,22 @@ async function submitOrderRow(row) {
   );
 
   try {
+    const encoded = new TextEncoder().encode(JSON.stringify(row));
+    if (encoded.byteLength > MAX_ORDER_WRITE_BYTES) {
+      const oversized = new Error("ORDER_TOO_LARGE");
+      oversized.code = "ORDER_TOO_LARGE";
+      oversized.status = 413;
+      throw oversized;
+    }
+
     const { error } = await supabase
-      .from(TABLE)
-      .insert(row)
+      .rpc("create_customer_order", { p_order: row })
       .abortSignal(controller.signal);
 
     if (!error) return;
 
-    // Retrying the exact same locally queued order is safe: the primary key
-    // makes the insert idempotent. A duplicate means the first attempt landed.
+    // The RPC is idempotent by order ID. A duplicate means the first write
+    // already landed and is safe to treat as success.
     if (String(error?.code || "") === "23505") return;
 
     const wrapped = new Error(error?.message || "ORDER_WRITE_FAILED");
@@ -615,9 +623,12 @@ export async function upsertOrder(order) {
   );
 
   try {
+    // Staff workflows only modify orders that already exist. Use UPDATE
+    // instead of UPSERT so the public client never needs INSERT permission.
     const { error } = await supabase
       .from(TABLE)
-      .upsert(row, { onConflict: "id" })
+      .update(row)
+      .eq("id", String(order.id))
       .abortSignal(controller.signal);
 
     if (error) throw error;
