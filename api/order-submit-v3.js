@@ -1,5 +1,5 @@
 const SUPABASE_URL = "https://kkmbiiiglgevwehhmtzq.supabase.co";
-const SUPABASE_KEY = "sb_publishable_cqSPEkE8JbyIu9NasnOMng_GwRMKVFO";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrbWJpaWlnbGdldndlaGhtdHpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwMDYwNzIsImV4cCI6MjEwNTU4MjA3Mn0.IqMb469tGShmoN6UNRXaU-Cy6MsGbXygOXEdW_2CML8";
 const CLIENT_VERSION = "hanaa-orders-v3";
 const WINDOW_MS = 30000;
 const MAX_WRITES_PER_WINDOW = 4;
