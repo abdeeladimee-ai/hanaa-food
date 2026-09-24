@@ -73,17 +73,58 @@ export const refreshStaffAccounts = async () => {
   return accounts;
 };
 
-export const addStaffAccount = async () => ({
-  ok: false,
-  error: "Zid compte jdida mazal mوقوف مؤقتاً. L5 comptes principals rahom secure w khdamin.",
-});
+export const addStaffAccount = async ({
+  name,
+  phone,
+  password,
+  role,
+  branchId = "",
+}) => {
+  const token = String(readRawSession()?.staffApiToken || "");
+  if (!token) return { ok: false, error: "3awed dkhol b compte admin." };
 
-export const deleteStaffAccount = async () => {
-  throw new Error("STAFF_MANAGEMENT_LOCKED");
+  try {
+    const normalizedRole = normalizeRole(role);
+    const data = await staffApi(
+      "upsert",
+      {
+        name: String(name || "").trim(),
+        phone: String(phone || "").trim(),
+        password: String(password || ""),
+        role: normalizedRole,
+        branchId: normalizedRole === "SNACK" ? branchId : null,
+        branchName:
+          normalizedRole === "SNACK" ? branchNames[branchId] || "" : null,
+      },
+      token,
+    );
+
+    await refreshStaffAccounts();
+    return { ok: true, account: data.account };
+  } catch (error) {
+    console.error("Staff account save failed:", error);
+    return {
+      ok: false,
+      error:
+        error?.code === "INVALID_STAFF_ACCOUNT"
+          ? "T2akked mn smiya, téléphone w password (6 7orouf/ar9am minimum)."
+          : "Ma t7fedch lcompte. 3awed jarrab.",
+    };
+  }
 };
 
-export const toggleStaffAccount = async () => {
-  throw new Error("STAFF_MANAGEMENT_LOCKED");
+export const deleteStaffAccount = async (id) => {
+  const token = String(readRawSession()?.staffApiToken || "");
+  if (!token) throw new Error("ADMIN_RELOGIN_REQUIRED");
+  await staffApi("delete", { id: String(id || "") }, token);
+  return refreshStaffAccounts();
+};
+
+export const toggleStaffAccount = async (id) => {
+  const token = String(readRawSession()?.staffApiToken || "");
+  if (!token) throw new Error("ADMIN_RELOGIN_REQUIRED");
+  await staffApi("toggle", { id: String(id || "") }, token);
+  return refreshStaffAccounts();
 };
 
 export const homePathForRole = (role) =>
