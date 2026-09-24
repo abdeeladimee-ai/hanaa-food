@@ -1,7 +1,20 @@
+import crypto from "node:crypto";
 import { ensureSchema, getPool, json } from "../lib/neonDb.js";
 
 const MAX_LIMIT = 200;
 const MAX_ORDER_BYTES = 64 * 1024;
+const MAX_ACTIVE_ORDERS_PER_PHONE = 2;
+const IP_WINDOW_MINUTES = 10;
+const IP_MAX_ATTEMPTS = 5;
+const IP_BLOCK_MINUTES = 30;
+const TERMINAL_STATUSES = [
+  "LIVRÉE",
+  "RÉCUPÉRÉE",
+  "REFUSÉE",
+  "REFUSÉE PAR LE SNACK",
+  "ANNULÉE",
+  "ANNULÉE PAR LE SNACK",
+];
 
 function bodyOf(req) {
   if (!req.body) return {};
@@ -12,7 +25,6 @@ function bodyOf(req) {
     return {};
   }
 }
-
 
 function compatibilityStaff(req) {
   const role = String(req.headers["x-hanaa-role"] || "").trim().toUpperCase();
@@ -25,14 +37,33 @@ function compatibilityStaff(req) {
   };
 }
 
+function normalizePhone(value) {
+  let digits = String(value || "").replace(/\D/g, "");
+  if (digits.startsWith("00212")) digits = digits.slice(5);
+  if (digits.startsWith("212")) digits = digits.slice(3);
+  if (digits.length === 9 && /^[67]/.test(digits)) digits = `0${digits}`;
+  return digits;
+}
+
+function clientIp(req) {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return forwarded || String(req.headers["x-real-ip"] || "").trim();
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex");
+}
+
 function validOrder(row) {
+  const phone = normalizePhone(row?.customer_phone);
   return Boolean(
     row &&
       typeof row === "object" &&
       !Array.isArray(row) &&
       /^HF[A-Z0-9]{4,24}$/i.test(String(row.id || "").trim()) &&
       ["delivery","pickup"].includes(String(row.order_type || "")) &&
-      String(row.customer_phone || "").trim() &&
+      phone.length >= 9 &&
+      phone.length <= 15 &&
       String(row.branch_id || "").trim(),
   );
 }
@@ -100,6 +131,60 @@ on conflict (id) do update set
   updated_at = excluded.updated_at
 returning *`;
 
+async function orderingPaused(db) {
+  const ordering = await db.query(
+    "select value from public.app_settings where key = $1 limit 1",
+    ["customer_ordering"],
+  );
+  return ordering.rows[0]?.value?.paused === true;
+}
+
+async function enforceIpGuard(req) {
+  const ip = clientIp(req);
+  if (!ip) return;
+
+  const guardKey = sha256(`ip:${ip}`);
+  const result = await getPool().query(
+    `insert into public.order_abuse_guard
+      (guard_key, kind, window_started_at, attempts, blocked_until, last_seen_at)
+     values ($1, 'ip', now(), 1, null, now())
+     on conflict (guard_key) do update set
+       attempts = case
+         when public.order_abuse_guard.window_started_at <= now() - ($2 || ' minutes')::interval
+           then 1
+         else public.order_abuse_guard.attempts + 1
+       end,
+       window_started_at = case
+         when public.order_abuse_guard.window_started_at <= now() - ($2 || ' minutes')::interval
+           then now()
+         else public.order_abuse_guard.window_started_at
+       end,
+       blocked_until = case
+         when public.order_abuse_guard.blocked_until > now()
+           then public.order_abuse_guard.blocked_until
+         when public.order_abuse_guard.window_started_at > now() - ($2 || ' minutes')::interval
+              and public.order_abuse_guard.attempts + 1 > $3
+           then now() + ($4 || ' minutes')::interval
+         else null
+       end,
+       last_seen_at = now()
+     returning attempts, blocked_until`,
+    [guardKey, String(IP_WINDOW_MINUTES), IP_MAX_ATTEMPTS, String(IP_BLOCK_MINUTES)],
+  );
+
+  const guard = result.rows[0];
+  if (guard?.blocked_until && new Date(guard.blocked_until).getTime() > Date.now()) {
+    const error = new Error("ORDER_SUSPICIOUS_BLOCKED");
+    error.code = "ORDER_SUSPICIOUS_BLOCKED";
+    error.status = 429;
+    error.retryAfterSeconds = Math.max(
+      60,
+      Math.ceil((new Date(guard.blocked_until).getTime() - Date.now()) / 1000),
+    );
+    throw error;
+  }
+}
+
 async function createOrder(req, res) {
   const body = bodyOf(req);
   const row = body.row;
@@ -112,11 +197,7 @@ async function createOrder(req, res) {
     return json(res, 413, { ok: false, code: "ORDER_TOO_LARGE" });
   }
 
-  const ordering = await getPool().query(
-    "select value from public.app_settings where key = $1 limit 1",
-    ["customer_ordering"],
-  );
-  if (ordering.rows[0]?.value?.paused === true) {
+  if (await orderingPaused(getPool())) {
     return json(res, 423, { ok: false, code: "CUSTOMER_ORDERING_PAUSED" });
   }
 
@@ -128,8 +209,70 @@ async function createOrder(req, res) {
     return json(res, 200, { ok: true, id: String(row.id), duplicate: true });
   }
 
-  await getPool().query(upsertSql, rowValues(row));
-  return json(res, 201, { ok: true, id: String(row.id) });
+  try {
+    await enforceIpGuard(req);
+  } catch (error) {
+    if (error?.code === "ORDER_SUSPICIOUS_BLOCKED") {
+      res.setHeader("Retry-After", String(error.retryAfterSeconds || 1800));
+      return json(res, 429, {
+        ok: false,
+        code: "ORDER_SUSPICIOUS_BLOCKED",
+        retryAfterSeconds: error.retryAfterSeconds || 1800,
+      });
+    }
+    throw error;
+  }
+
+  const phone = normalizePhone(row.customer_phone);
+  const phoneKey = phone.slice(-9);
+  const client = await getPool().connect();
+
+  try {
+    await client.query("begin");
+    await client.query("select pg_advisory_xact_lock(hashtext($1))", [`order-phone:${phoneKey}`]);
+
+    if (await orderingPaused(client)) {
+      await client.query("rollback");
+      return json(res, 423, { ok: false, code: "CUSTOMER_ORDERING_PAUSED" });
+    }
+
+    const duplicate = await client.query(
+      "select id from public.orders where id = $1 limit 1",
+      [String(row.id)],
+    );
+    if (duplicate.rows[0]) {
+      await client.query("commit");
+      return json(res, 200, { ok: true, id: String(row.id), duplicate: true });
+    }
+
+    const active = await client.query(
+      `select count(*)::int as count
+         from public.orders
+        where right(regexp_replace(coalesce(customer_phone, ''), '[^0-9]', '', 'g'), 9) = $1
+          and upper(coalesce(status_label, '')) <> all($2::text[])`,
+      [phoneKey, TERMINAL_STATUSES],
+    );
+
+    if (Number(active.rows[0]?.count || 0) >= MAX_ACTIVE_ORDERS_PER_PHONE) {
+      await client.query("rollback");
+      return json(res, 429, {
+        ok: false,
+        code: "ORDER_LIMIT_REACHED",
+        maxActiveOrders: MAX_ACTIVE_ORDERS_PER_PHONE,
+      });
+    }
+
+    await client.query(upsertSql, rowValues(row));
+    await client.query("commit");
+    return json(res, 201, { ok: true, id: String(row.id) });
+  } catch (error) {
+    try {
+      await client.query("rollback");
+    } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function readOrders(req, res) {
@@ -231,6 +374,9 @@ export default async function handler(req, res) {
     return json(res, 405, { ok: false, code: "METHOD_NOT_ALLOWED" });
   } catch (error) {
     console.error("neon orders api failed", error);
-    return json(res, 500, { ok: false, code: error?.code || "NEON_ORDERS_FAILED" });
+    return json(res, Number(error?.status || 500), {
+      ok: false,
+      code: error?.code || "NEON_ORDERS_FAILED",
+    });
   }
 }
