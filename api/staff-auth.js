@@ -27,12 +27,21 @@ function passwordKey() {
 }
 
 function expectedPassword(accountId) {
+  const labels = {
+    "admin-dev": "Admin",
+    "snack-tadart-dev": "Tadart",
+    "snack-amgala-dev": "Amgala",
+    "snack-rue-baghdad-dev": "Baghdad",
+    "driver-dev": "Livreur",
+  };
+
   const digest = crypto
     .createHmac("sha256", passwordKey())
     .update(String(accountId))
-    .digest("base64url")
-    .slice(0, 16);
-  return `HF#${digest}`;
+    .digest("hex");
+
+  const pin = (Number.parseInt(digest.slice(0, 8), 16) % 9000) + 1000;
+  return `${labels[accountId] || "Hanaa"}#${pin}`;
 }
 
 function safeEqual(left, right) {
