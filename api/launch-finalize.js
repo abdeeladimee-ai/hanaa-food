@@ -10,6 +10,37 @@ function expectedKey() {
     .slice(0, 48);
 }
 
+function staffPassword(accountId) {
+  const key = crypto
+    .createHash("sha256")
+    .update(`hanaa-staff-password-v1|${String(process.env.DATABASE_URL || "")}`)
+    .digest();
+  const digest = crypto
+    .createHmac("sha256", key)
+    .update(String(accountId))
+    .digest("base64url")
+    .slice(0, 16);
+  return `HF#${digest}`;
+}
+
+async function loginAdmin(origin) {
+  const response = await fetch(`${origin}/api/staff-auth`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "login",
+      identifier: "admin@hanaa-food.test",
+      password: staffPassword("admin-dev"),
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok === false || !payload?.staffApiToken) {
+    throw new Error(`STAFF_LOGIN_FAILED:${payload?.code || response.status}`);
+  }
+  return payload;
+}
+
 async function pausedState() {
   const result = await getPool().query(
     "select value from public.app_settings where key='customer_ordering' limit 1",
@@ -26,15 +57,11 @@ async function setPaused(paused) {
   );
 }
 
-async function preflight() {
+async function preflight(origin) {
   await ensureSchema();
   const db = await getPool().query("select current_database() as db, now() as now");
-  const token = issueStaffToken({
-    id: "launch-check",
-    name: "Launch Check",
-    role: "ADMIN",
-  });
-  const verified = verifyStaffTokenValue(token);
+  const login = await loginAdmin(origin);
+  const verified = verifyStaffTokenValue(login.staffApiToken);
 
   const client = await getPool().connect();
   const id = `HFTEST${Date.now().toString(36).toUpperCase()}`;
@@ -58,7 +85,9 @@ async function preflight() {
 
     return {
       db: db.rows[0]?.db,
+      staffLogin: login.account?.role === "ADMIN",
       signedTokenVerified: verified?.role === "ADMIN",
+      staffApiToken: login.staffApiToken,
       transactionInsert: read.rows[0]?.id === id,
       transactionUpdate: updated.rows[0]?.status_label === "RÉCUPÉRÉE",
     };
@@ -67,7 +96,7 @@ async function preflight() {
   }
 }
 
-async function publicApiRoundTrip(origin) {
+async function publicApiRoundTrip(origin, token) {
   const id = `HFTEST${Date.now().toString(36).toUpperCase()}`;
   const row = {
     id,
@@ -98,12 +127,6 @@ async function publicApiRoundTrip(origin) {
   if (!create.ok || created?.ok === false) {
     throw new Error(`CREATE_FAILED:${created?.code || create.status}`);
   }
-
-  const token = issueStaffToken({
-    id: "launch-check",
-    name: "Launch Check",
-    role: "ADMIN",
-  });
 
   const changedRow = {
     ...row,
@@ -160,8 +183,9 @@ export default async function handler(req, res) {
   const action = String(req.query?.action || "check");
 
   try {
-    const checks = await preflight();
-    if (!checks.db || !checks.signedTokenVerified || !checks.transactionInsert || !checks.transactionUpdate) {
+    const origin = "https://hanaa-food.vercel.app";
+    const checks = await preflight(origin);
+    if (!checks.db || !checks.staffLogin || !checks.signedTokenVerified || !checks.transactionInsert || !checks.transactionUpdate) {
       return res.status(500).json({ ok: false, stage: "preflight", checks });
     }
 
@@ -169,7 +193,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         paused: await pausedState(),
-        checks,
+        checks: { ...checks, staffApiToken: undefined },
       });
     }
 
@@ -180,13 +204,12 @@ export default async function handler(req, res) {
     await setPaused(false);
 
     try {
-      const origin = "https://hanaa-food.vercel.app";
-      const roundTrip = await publicApiRoundTrip(origin);
+      const roundTrip = await publicApiRoundTrip(origin, checks.staffApiToken);
       return res.status(200).json({
         ok: true,
         launched: true,
         paused: await pausedState(),
-        checks,
+        checks: { ...checks, staffApiToken: undefined },
         roundTrip,
       });
     } catch (error) {
