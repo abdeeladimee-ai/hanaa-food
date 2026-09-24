@@ -180,6 +180,19 @@ function isRetryableOrderError(error) {
   const code = String(error?.code || "");
   const message = String(error?.message || "").toLowerCase();
 
+  if (
+    [
+      "ORDER_LIMIT_REACHED",
+      "ORDER_SUSPICIOUS_BLOCKED",
+      "CUSTOMER_ORDERING_PAUSED",
+      "CUSTOMER_ORDERING_CLOSED",
+      "INVALID_ORDER",
+      "ORDER_TOO_LARGE",
+    ].includes(code)
+  ) {
+    return false;
+  }
+
   return (
     error?.name === "AbortError" ||
     error instanceof TypeError ||
