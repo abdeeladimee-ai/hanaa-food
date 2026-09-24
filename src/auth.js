@@ -145,6 +145,23 @@ const withTimeout = (promise, ms, code = "REQUEST_TIMEOUT") =>
     }),
   ]);
 
+const staffApiAuth = async (action, payload = {}) => {
+  const response = await fetch("/api/staff-auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...payload }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok === false) {
+    const error = new Error(data?.code || "STAFF_API_AUTH_FAILED");
+    error.code = data?.code || "STAFF_API_AUTH_FAILED";
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+};
+
 const migrateLegacyStaffAccounts = async (token) => {
   const legacy = getStaffAccounts().filter(
     (item) =>
@@ -304,11 +321,14 @@ export const authorizedPath = (path, session) => {
 export const getSession = () => {
   try {
     const session = readRawSession();
-
     if (!session?.role) return null;
 
     const role = normalizeRole(session.role);
-    if (!role) return null;
+    if (!role || !session.staffApiToken) {
+      localStorage.removeItem(sessionKey);
+      sessionStorage.removeItem(sessionKey);
+      return null;
+    }
 
     if (role === "ADMIN" && !session.cloudToken) {
       localStorage.removeItem(sessionKey);
@@ -316,10 +336,7 @@ export const getSession = () => {
       return null;
     }
 
-    return {
-      ...session,
-      role,
-    };
+    return { ...session, role };
   } catch {
     return null;
   }
@@ -327,23 +344,30 @@ export const getSession = () => {
 
 export const signIn = async (identifier, password) => {
   const value = String(identifier || "").trim();
-  const lowerValue = value.toLowerCase();
-  const phoneValue = normalizePhone(value);
+  const enteredPassword = String(password || "");
 
   try {
     const cloudAccount = await withTimeout(
       cloudRpc("staff_login", {
         p_identifier: value,
-        p_password: String(password || ""),
+        p_password: enteredPassword,
       }),
       6000,
       "STAFF_LOGIN_TIMEOUT",
     );
 
-    if (cloudAccount?.role) {
+    if (cloudAccount?.role && cloudAccount?.cloudToken) {
+      const verified = await withTimeout(
+        staffApiAuth("exchangeCloud", { cloudToken: cloudAccount.cloudToken }),
+        6000,
+        "STAFF_TOKEN_TIMEOUT",
+      );
+
       const session = {
         ...cloudAccount,
-        role: normalizeRole(cloudAccount.role),
+        ...(verified.account || {}),
+        role: normalizeRole(verified.account?.role || cloudAccount.role),
+        staffApiToken: verified.staffApiToken,
         authenticatedAt: new Date().toISOString(),
       };
 
@@ -367,45 +391,31 @@ export const signIn = async (identifier, password) => {
     console.error("Cloud staff login failed:", error);
   }
 
-  const enteredHash = await hashPassword(password);
-  const accounts = [...devAccounts, ...getStaffAccounts()];
-  let account = null;
+  try {
+    const verified = await withTimeout(
+      staffApiAuth("legacyLogin", {
+        identifier: value,
+        password: enteredPassword,
+      }),
+      6000,
+      "STAFF_LOCAL_LOGIN_TIMEOUT",
+    );
 
-  for (const item of accounts) {
-    if (item.active === false) continue;
+    if (!verified?.account?.role || !verified?.staffApiToken) return null;
 
-    const sameEmail =
-      item.email && String(item.email).toLowerCase() === lowerValue;
-    const samePhone =
-      item.phone && normalizePhone(item.phone) === phoneValue;
-    const sameName =
-      item.name && String(item.name).trim().toLowerCase() === lowerValue;
+    const session = {
+      ...verified.account,
+      role: normalizeRole(verified.account.role),
+      staffApiToken: verified.staffApiToken,
+      authenticatedAt: new Date().toISOString(),
+    };
 
-    if (!sameEmail && !samePhone && !sameName) continue;
-
-    const passwordMatches = item.passwordHash
-      ? item.passwordHash === enteredHash
-      : item.password === password;
-
-    if (passwordMatches) {
-      account = item;
-      break;
-    }
+    localStorage.setItem(sessionKey, JSON.stringify(session));
+    return session;
+  } catch (error) {
+    console.error("Verified staff login failed:", error);
+    return null;
   }
-
-  if (!account || normalizeRole(account.role) === "ADMIN") return null;
-
-  const { password: _password, passwordHash: _passwordHash, ...safeAccount } =
-    account;
-
-  const session = {
-    ...safeAccount,
-    role: normalizeRole(account.role),
-    authenticatedAt: new Date().toISOString(),
-  };
-
-  localStorage.setItem(sessionKey, JSON.stringify(session));
-  return session;
 };
 
 export const signOut = () => {
