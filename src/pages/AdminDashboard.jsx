@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { refreshStaffAccounts } from "../auth";
+import { getSession, refreshStaffAccounts } from "../auth";
 import { listOrders, subscribeOrders } from "../ordersApi";
 const DEFAULT_ZONES = [
   { maxKm: 2, fee: 10 },
@@ -516,7 +516,7 @@ export default function AdminDashboard({ onNavigate }) {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          "X-Hanaa-Role": "ADMIN",
+          Authorization: `Bearer ${String(getSession()?.staffApiToken || "")}`,
         },
         body: JSON.stringify({ paused: nextPaused }),
       });
