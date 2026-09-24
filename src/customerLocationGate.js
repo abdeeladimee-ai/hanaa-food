@@ -1,6 +1,18 @@
 const STAFF_PATHS = ["/snack", "/livreur", "/login", "/admin"];
 const LOCATION_STORAGE_KEY = "hanaa-forced-location";
-const LOCATION_CACHE_MS = 10 * 60 * 1000;
+const LOCATION_CACHE_MS_MOBILE = 10 * 60 * 1000;
+const LOCATION_CACHE_MS_DESKTOP = 24 * 60 * 60 * 1000;
+
+function isLikelyMobileDevice() {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+}
+
+function locationCacheMs() {
+  return isLikelyMobileDevice()
+    ? LOCATION_CACHE_MS_MOBILE
+    : LOCATION_CACHE_MS_DESKTOP;
+}
 
 function isCustomerPage() {
   if (typeof window === "undefined") return false;
@@ -119,7 +131,7 @@ function readCachedLocation() {
   try {
     const saved = JSON.parse(localStorage.getItem(LOCATION_STORAGE_KEY) || "null");
     const updatedAt = new Date(saved?.updatedAt || 0).getTime();
-    if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > LOCATION_CACHE_MS) {
+    if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > locationCacheMs()) {
       return null;
     }
     if (!Number.isFinite(Number(saved?.latitude)) || !Number.isFinite(Number(saved?.longitude))) {
@@ -289,7 +301,7 @@ function requestLocation() {
     {
       enableHighAccuracy: false,
       timeout: 15000,
-      maximumAge: 600000,
+      maximumAge: locationCacheMs(),
     },
   );
 }
