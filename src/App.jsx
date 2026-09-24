@@ -998,7 +998,28 @@ function App() {
         window.alert("Commandes fermées de 03:00 à 12:00. Réouverture à 12:00.");
         return;
       }
-      window.alert("Commande ma tsajlatch. T2akked mn Supabase w internet.");
+      if (
+        error?.code === "ORDER_LIMIT_REACHED" ||
+        error?.message === "ORDER_LIMIT_REACHED"
+      ) {
+        window.alert("3andek déjà 2 commandes mazal ma tsalawch. Tsena 7ta tkemmel chi wa7da 9bel ma tzid commande jdida.");
+        return;
+      }
+      if (
+        error?.code === "ORDER_SUSPICIOUS_BLOCKED" ||
+        error?.message === "ORDER_SUSPICIOUS_BLOCKED"
+      ) {
+        window.alert("Twa9fo commandes mn had connexion مؤقتاً بسبب محاولات كثيرة. 3awed jarrab mn b3d.");
+        return;
+      }
+      if (
+        error?.code === "INVALID_ORDER" ||
+        error?.message === "INVALID_ORDER"
+      ) {
+        window.alert("T2akked mn numéro téléphone w ma3loumat dyal commande.");
+        return;
+      }
+      window.alert("Commande ma tsajlatch. T2akked mn internet w 3awed jarrab.");
       return;
     }
     setCart([]);
