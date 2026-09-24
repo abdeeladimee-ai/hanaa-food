@@ -222,17 +222,29 @@ function saveWhatsAppFallbackBackup(order) {
   }
 }
 
+const WHATSAPP_BRANCH_PHONES = {
+  tadart: "0522501650",
+  amgala: "0521431103",
+  "rue-baghdad": "0522525204",
+};
+
 function whatsappFallbackUrl(order, branchPhone = "") {
-  const normalized = String(branchPhone || "").replace(/\D/g, "");
-  const mobile =
-    /^0[67]\d{8}$/.test(normalized)
+  const rawPhone =
+    WHATSAPP_BRANCH_PHONES[String(order?.branchId || "")] ||
+    String(branchPhone || "");
+  const normalized = String(rawPhone).replace(/\D/g, "");
+
+  const moroccoPhone =
+    /^0[5-7]\d{8}$/.test(normalized)
       ? `212${normalized.slice(1)}`
-      : /^212[67]\d{8}$/.test(normalized)
+      : /^212[5-7]\d{8}$/.test(normalized)
         ? normalized
         : "";
 
   const text = encodeURIComponent(whatsappFallbackText(order));
-  return mobile ? `https://wa.me/${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
+  return moroccoPhone
+    ? `https://wa.me/${moroccoPhone}?text=${text}`
+    : `https://wa.me/?text=${text}`;
 }
 
 async function geocodePlace(query) {
