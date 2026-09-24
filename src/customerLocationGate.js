@@ -43,7 +43,6 @@ function ensureGate() {
       <p>La position est obligatoire pour choisir automatiquement le restaurant qui livrera ta commande.</p>
       <p id="hanaa-location-gate-message" class="hanaa-location-gate-message">Clique sur le bouton puis choisis Autoriser.</p>
       <button id="hanaa-location-gate-button" type="button">AUTORISER MA POSITION</button>
-      <button id="hanaa-location-manual-button" type="button">CONTINUER AVEC ADRESSE</button>
     </div>
   `;
 
@@ -106,18 +105,6 @@ function ensureGate() {
         opacity: .65;
         cursor: wait;
       }
-      #hanaa-location-manual-button {
-        width: 100%;
-        min-height: 48px;
-        margin-top: 10px;
-        border: 1px solid #D71920;
-        border-radius: 14px;
-        background: #fff;
-        color: #D71920;
-        font-size: 14px;
-        font-weight: 900;
-        cursor: pointer;
-      }
     `;
     document.head.appendChild(style);
   }
@@ -126,15 +113,6 @@ function ensureGate() {
   document
     .getElementById("hanaa-location-gate-button")
     ?.addEventListener("click", requestLocation);
-  document
-    .getElementById("hanaa-location-manual-button")
-    ?.addEventListener("click", () => {
-      removeGate();
-      window.setTimeout(() => {
-        const addressButton = document.querySelector(".address-pill");
-        if (addressButton instanceof HTMLElement) addressButton.click();
-      }, 0);
-    });
 }
 
 function readCachedLocation() {
@@ -267,7 +245,7 @@ function onLocationError(error) {
   }
 
   setGateMessage(
-    "Position indisponible pour le moment. Reessaie le GPS ou continue avec ton adresse.",
+    "Position indisponible pour le moment. Active le GPS puis appuie sur Reessayer.",
   );
 }
 
@@ -284,11 +262,36 @@ function requestLocation() {
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(onLocationSuccess, onLocationError, {
-    enableHighAccuracy: false,
-    timeout: 15000,
-    maximumAge: 600000,
-  });
+  const firstAttemptError = (error) => {
+    // Some browsers briefly return POSITION_UNAVAILABLE even when location
+    // permission is allowed. Retry once with a fresh high-accuracy request
+    // before showing the blocking error to the customer.
+    if (error?.code === 2) {
+      setGateMessage("Position en cours de recherche... deuxieme tentative.");
+      navigator.geolocation.getCurrentPosition(
+        onLocationSuccess,
+        onLocationError,
+        {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 0,
+        },
+      );
+      return;
+    }
+
+    onLocationError(error);
+  };
+
+  navigator.geolocation.getCurrentPosition(
+    onLocationSuccess,
+    firstAttemptError,
+    {
+      enableHighAccuracy: false,
+      timeout: 15000,
+      maximumAge: 600000,
+    },
+  );
 }
 
 function startCustomerLocationGate() {
