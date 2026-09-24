@@ -11,7 +11,7 @@ import AdminDirectory from "./pages/AdminDirectory";
 import Login from "./pages/Login";
 import { authorizedPath, getSession, homePathForRole } from "./auth";
 
-import { createOrder, getOrder, listOrders, subscribeOrder, subscribeOrders } from "./ordersApi";
+import { cancelPendingOrderRecovery, createOrder, getOrder, listOrders, subscribeOrder, subscribeOrders } from "./ordersApi";
 const routeViews = { "/login": "login", "/admin": "admin-dashboard", "/admin/commandes-livraison": "delivery-orders", "/admin/commandes-emporter": "pickup-orders", "/admin/livreurs": "driver-management", "/admin/utilisateurs": "user-management", "/snack": "snack-delivery", "/livreur": "driver" };
 
 const photo = (id) =>
@@ -163,6 +163,78 @@ const branches = (() => {
 })();
 
 const routingEndpoint = "https://router.project-osrm.org/route/v1/driving";
+const WHATSAPP_FALLBACK_BACKUP_KEY = "hanaa-whatsapp-fallback-orders-v1";
+
+function whatsappFallbackText(order) {
+  const lines = [
+    "HANAA FOOD - COMMANDE SECOURS WHATSAPP",
+    `ID: #${order.id}`,
+    `Client: ${order.customerName || "-"}`,
+    `Telephone: ${order.customerPhone || "-"}`,
+    `Type: ${order.orderType === "pickup" ? "A emporter" : "Livraison"}`,
+    `Branche: ${order.branchName || order.branchId || "-"}`,
+  ];
+
+  if (order.orderType === "delivery") {
+    lines.push(`Adresse: ${order.deliveryAddress || "-"}`);
+  }
+
+  lines.push("", "COMMANDE:");
+  (order.items || []).forEach((item) => {
+    const details = [
+      item.size ? `Taille: ${item.size}` : "",
+      item.sauce ? `Sauce: ${item.sauce}` : "",
+      Array.isArray(item.extras) && item.extras.length
+        ? `Supplements: ${item.extras.map((extra) => extra?.name || extra).filter(Boolean).join(", ")}`
+        : "",
+    ].filter(Boolean);
+
+    lines.push(
+      `- ${item.quantity || 1} x ${item.name || "Article"}${details.length ? ` (${details.join(" | ")})` : ""}`,
+    );
+  });
+
+  lines.push(
+    "",
+    `Sous-total: ${order.subtotal ?? 0} DH`,
+    `Livraison: ${order.deliveryFee ?? 0} DH`,
+    `TOTAL: ${order.total ?? 0} DH`,
+    `Paiement: ${order.paymentMethod || "-"}`,
+    "",
+    "IMPORTANT: commande envoyee sur WhatsApp car le serveur/database ne repondait pas.",
+    "Merci de confirmer cette commande avec son ID pour eviter les doublons.",
+  );
+
+  return lines.join("\n");
+}
+
+function saveWhatsAppFallbackBackup(order) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WHATSAPP_FALLBACK_BACKUP_KEY) || "[]");
+    const rows = Array.isArray(saved) ? saved : [];
+    const next = [
+      ...rows.filter((item) => String(item?.id || "") !== String(order?.id || "")),
+      { ...order, fallbackSavedAt: new Date().toISOString() },
+    ].slice(-20);
+    localStorage.setItem(WHATSAPP_FALLBACK_BACKUP_KEY, JSON.stringify(next));
+  } catch {
+    // WhatsApp handoff can still continue even if localStorage is unavailable.
+  }
+}
+
+function whatsappFallbackUrl(order, branchPhone = "") {
+  const normalized = String(branchPhone || "").replace(/\D/g, "");
+  const mobile =
+    /^0[67]\d{8}$/.test(normalized)
+      ? `212${normalized.slice(1)}`
+      : /^212[67]\d{8}$/.test(normalized)
+        ? normalized
+        : "";
+
+  const text = encodeURIComponent(whatsappFallbackText(order));
+  return mobile ? `https://wa.me/${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
+}
+
 async function geocodePlace(query) {
   const response = await fetch(
     `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query + ", Morocco")}`,
@@ -978,9 +1050,20 @@ function App() {
       setOrder(savedOrder);
 
       if (savedOrder?.pendingSync) {
-        window.alert(
-          "Commande محفوظة فالجهاز. غادي تعاود تتصيفط automatiquement ملي يرجع الاتصال بالـserveur.",
+        const useWhatsApp = window.confirm(
+          "Serveur/database ma jawabch. Commande محفوظة مؤقتاً.\n\nOK = n7ell lik WhatsApp b commande kamla bach tsiftha daba.\nCancel = nkhelli site y3awed yjarrab automatiquement.",
         );
+
+        if (useWhatsApp) {
+          cancelPendingOrderRecovery(savedOrder.id);
+          saveWhatsAppFallbackBackup(savedOrder);
+          const url = whatsappFallbackUrl(savedOrder, branch?.phone || "");
+          window.alert(
+            "Ghadi y7ell WhatsApp b commande wajda. Darori dghat SEND bach twsel lcommande. ID dyalha kayb9a nafsso bach ma ttdoublech.",
+          );
+          window.location.assign(url);
+          return;
+        }
       }
     } catch (error) {
       console.error("Supabase order create failed:", error);
