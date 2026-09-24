@@ -9,72 +9,11 @@ const branchNames = {
   "rue-baghdad": "Hanaa Food Rue Baghdad",
 };
 
-const devAccounts = [
-  {
-    id: "admin-dev",
-    email: "admin@hanaa-food.test",
-    passwordHash: "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
-    role: "ADMIN",
-    name: "admin",
-  },
-  {
-    id: "snack-tadart-dev",
-    email: "snack@hanaa-food.test",
-    passwordHash: "00e38a2374c9eb01d3e7f763a549028a07fcaea6478e3f01f899364baa40c96b",
-    role: "SNACK",
-    branchId: "tadart",
-    branchName: "Hanaa Food Tadart",
-    name: "Caisse Tadart",
-  },
-  {
-    id: "snack-jnan-tadart",
-    phone: "0630012136",
-    passwordHash: "d150f3db3cdbaa934c701b9b98dfdeace78542ecff20ce3713abbd5bd4920d04",
-    role: "SNACK",
-    branchId: "tadart",
-    branchName: "Hanaa Food Tadart",
-    name: "Caisse Jnan Tadart",
-    active: true,
-  },
-  {
-    id: "snack-amgala-dev",
-    email: "amgala@hanaa-food.test",
-    passwordHash: "36758f157740a12393c885a7fa45ce0957447cb1ca836f5e6b25bf656046f420",
-    role: "SNACK",
-    branchId: "amgala",
-    branchName: "Hanaa Food Amgala",
-    name: "Caisse Amgala",
-  },
-  {
-    id: "snack-rue-baghdad-dev",
-    email: "baghdad@hanaa-food.test",
-    passwordHash: "f80640ac2bbd19fc684156554cf440be40785417123617554356bca7a9688055",
-    role: "SNACK",
-    branchId: "rue-baghdad",
-    branchName: "Hanaa Food Rue Baghdad",
-    name: "Hajar",
-  },
-  {
-    id: "driver-dev",
-    email: "livreur@hanaa-food.test",
-    passwordHash: "494d022492052a06f8f81949639a1d148c1051fa3d4e4688fbd96efe649cd382",
-    role: "LIVREUR",
-    name: "Livreur 1",
-  },
-];
 
 const normalizePhone = (value) => {
   const digits = String(value || "").replace(/[^0-9]/g, "").trim();
   if (/^212[67]\d{8}$/.test(digits)) return `0${digits.slice(3)}`;
   return digits;
-};
-
-const hashPassword = async (value) => {
-  const input = new TextEncoder().encode(String(value || ""));
-  const digest = await window.crypto.subtle.digest("SHA-256", input);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
 };
 
 export const normalizeRole = (role) => {
@@ -144,6 +83,23 @@ const withTimeout = (promise, ms, code = "REQUEST_TIMEOUT") =>
       }, ms);
     }),
   ]);
+
+const staffApiAuth = async (action, payload = {}) => {
+  const response = await fetch("/api/staff-auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...payload }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok === false) {
+    const error = new Error(data?.code || "STAFF_API_AUTH_FAILED");
+    error.code = data?.code || "STAFF_API_AUTH_FAILED";
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+};
 
 const migrateLegacyStaffAccounts = async (token) => {
   const legacy = getStaffAccounts().filter(
@@ -304,11 +260,14 @@ export const authorizedPath = (path, session) => {
 export const getSession = () => {
   try {
     const session = readRawSession();
-
     if (!session?.role) return null;
 
     const role = normalizeRole(session.role);
-    if (!role) return null;
+    if (!role || !session.staffApiToken) {
+      localStorage.removeItem(sessionKey);
+      sessionStorage.removeItem(sessionKey);
+      return null;
+    }
 
     if (role === "ADMIN" && !session.cloudToken) {
       localStorage.removeItem(sessionKey);
@@ -316,10 +275,7 @@ export const getSession = () => {
       return null;
     }
 
-    return {
-      ...session,
-      role,
-    };
+    return { ...session, role };
   } catch {
     return null;
   }
@@ -327,85 +283,55 @@ export const getSession = () => {
 
 export const signIn = async (identifier, password) => {
   const value = String(identifier || "").trim();
-  const lowerValue = value.toLowerCase();
-  const phoneValue = normalizePhone(value);
+  const enteredPassword = String(password || "");
 
   try {
     const cloudAccount = await withTimeout(
       cloudRpc("staff_login", {
         p_identifier: value,
-        p_password: String(password || ""),
+        p_password: enteredPassword,
       }),
       6000,
       "STAFF_LOGIN_TIMEOUT",
     );
 
-    if (cloudAccount?.role) {
-      const session = {
-        ...cloudAccount,
-        role: normalizeRole(cloudAccount.role),
-        authenticatedAt: new Date().toISOString(),
-      };
+    if (!cloudAccount?.role || !cloudAccount?.cloudToken) return null;
 
-      localStorage.setItem(sessionKey, JSON.stringify(session));
+    const verified = await withTimeout(
+      staffApiAuth("exchangeCloud", { cloudToken: cloudAccount.cloudToken }),
+      6000,
+      "STAFF_TOKEN_TIMEOUT",
+    );
 
-      if (session.role === "ADMIN" && session.cloudToken) {
-        void (async () => {
-          try {
-            await migrateLegacyStaffAccounts(session.cloudToken);
-            const accounts = await listCloudStaffAccounts(session.cloudToken);
-            saveStaffAccounts(accounts);
-          } catch (error) {
-            console.error("Legacy staff sync failed:", error);
-          }
-        })();
-      }
+    const session = {
+      ...cloudAccount,
+      ...(verified.account || {}),
+      role: normalizeRole(verified.account?.role || cloudAccount.role),
+      staffApiToken: verified.staffApiToken,
+      authenticatedAt: new Date().toISOString(),
+    };
 
-      return session;
+    if (!session.role || !session.staffApiToken) return null;
+
+    localStorage.setItem(sessionKey, JSON.stringify(session));
+
+    if (session.role === "ADMIN" && session.cloudToken) {
+      void (async () => {
+        try {
+          await migrateLegacyStaffAccounts(session.cloudToken);
+          const accounts = await listCloudStaffAccounts(session.cloudToken);
+          saveStaffAccounts(accounts);
+        } catch (error) {
+          console.error("Legacy staff sync failed:", error);
+        }
+      })();
     }
+
+    return session;
   } catch (error) {
-    console.error("Cloud staff login failed:", error);
+    console.error("Verified staff login failed:", error);
+    return null;
   }
-
-  const enteredHash = await hashPassword(password);
-  const accounts = [...devAccounts, ...getStaffAccounts()];
-  let account = null;
-
-  for (const item of accounts) {
-    if (item.active === false) continue;
-
-    const sameEmail =
-      item.email && String(item.email).toLowerCase() === lowerValue;
-    const samePhone =
-      item.phone && normalizePhone(item.phone) === phoneValue;
-    const sameName =
-      item.name && String(item.name).trim().toLowerCase() === lowerValue;
-
-    if (!sameEmail && !samePhone && !sameName) continue;
-
-    const passwordMatches = item.passwordHash
-      ? item.passwordHash === enteredHash
-      : item.password === password;
-
-    if (passwordMatches) {
-      account = item;
-      break;
-    }
-  }
-
-  if (!account || normalizeRole(account.role) === "ADMIN") return null;
-
-  const { password: _password, passwordHash: _passwordHash, ...safeAccount } =
-    account;
-
-  const session = {
-    ...safeAccount,
-    role: normalizeRole(account.role),
-    authenticatedAt: new Date().toISOString(),
-  };
-
-  localStorage.setItem(sessionKey, JSON.stringify(session));
-  return session;
 };
 
 export const signOut = () => {
@@ -424,6 +350,4 @@ export const signOut = () => {
   sessionStorage.removeItem(sessionKey);
 };
 
-export const testAccounts = devAccounts.map(
-  ({ passwordHash: _passwordHash, ...account }) => account,
-);
+export const testAccounts = [];

@@ -1,4 +1,5 @@
 import { ensureSchema, getPool, json } from "../lib/neonDb.js";
+import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 
 function bodyOf(req) {
   if (!req.body) return {};
@@ -8,10 +9,6 @@ function bodyOf(req) {
   } catch {
     return {};
   }
-}
-
-function isAdmin(req) {
-  return String(req.headers["x-hanaa-role"] || "").trim().toUpperCase() === "ADMIN";
 }
 
 async function readSetting(res) {
@@ -31,7 +28,8 @@ async function readSetting(res) {
 }
 
 async function updateSetting(req, res) {
-  if (!isAdmin(req)) {
+  const staff = verifiedStaffFromRequest(req);
+  if (!staff || staff.role !== "ADMIN") {
     return json(res, 401, { ok: false, code: "ADMIN_AUTH_REQUIRED" });
   }
 

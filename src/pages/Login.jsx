@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { signIn } from "../auth";
-import { signInNamedCashier } from "../cashierAccounts";
 
 export default function Login({ onSuccess }) {
   const [identifier, setIdentifier] = useState("");
@@ -14,8 +13,7 @@ export default function Login({ onSuccess }) {
     setLoading(true);
 
     try {
-      let session = signInNamedCashier(identifier, password);
-      if (!session) session = await signIn(identifier, password);
+      const session = await signIn(identifier, password);
 
       if (!session) {
         setError("Smiya / téléphone / email ou mot de passe incorrect.");

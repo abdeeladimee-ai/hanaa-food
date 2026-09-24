@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { ensureSchema, getPool, json } from "../lib/neonDb.js";
+import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 
 const MAX_LIMIT = 200;
 const MAX_ORDER_BYTES = 64 * 1024;
@@ -24,17 +25,6 @@ function bodyOf(req) {
   } catch {
     return {};
   }
-}
-
-function compatibilityStaff(req) {
-  const role = String(req.headers["x-hanaa-role"] || "").trim().toUpperCase();
-  if (!["ADMIN", "SNACK", "LIVREUR"].includes(role)) return null;
-
-  return {
-    role,
-    branch_id: String(req.headers["x-hanaa-branch"] || "").trim() || null,
-    compatibility: true,
-  };
 }
 
 function normalizePhone(value) {
@@ -276,7 +266,7 @@ async function createOrder(req, res) {
 }
 
 async function readOrders(req, res) {
-  const staff = compatibilityStaff(req);
+  const staff = verifiedStaffFromRequest(req);
   const id = String(req.query?.id || "").trim();
   const ids = String(req.query?.ids || "")
     .split(",")
@@ -306,7 +296,7 @@ async function readOrders(req, res) {
   const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isFinite(requestedLimit) ? requestedLimit : 120));
   const updatedSince = String(req.query?.updatedSince || "").trim();
   const requestedBranch = String(req.query?.branchId || "").trim();
-  const branchId = staff.role === "SNACK" ? staff.branch_id : requestedBranch;
+  const branchId = staff.role === "SNACK" ? staff.branchId : requestedBranch;
 
   const params = [];
   const where = [];
@@ -331,7 +321,7 @@ async function readOrders(req, res) {
 }
 
 async function updateOrder(req, res) {
-  const staff = compatibilityStaff(req);
+  const staff = verifiedStaffFromRequest(req);
   if (!staff || !["ADMIN","SNACK","LIVREUR"].includes(staff.role)) {
     return json(res, 401, { ok: false, code: "STAFF_AUTH_REQUIRED" });
   }
@@ -350,7 +340,7 @@ async function updateOrder(req, res) {
     return json(res, 404, { ok: false, code: "ORDER_NOT_FOUND" });
   }
 
-  if (staff.role === "SNACK" && current.rows[0].branch_id !== staff.branch_id) {
+  if (staff.role === "SNACK" && current.rows[0].branch_id !== staff.branchId) {
     return json(res, 403, { ok: false, code: "WRONG_BRANCH" });
   }
 
