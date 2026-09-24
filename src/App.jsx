@@ -1375,6 +1375,22 @@ function Home({
 }) {
   return (
     <main>
+      <div
+        style={{
+          margin: "18px auto 8px",
+          width: "min(1180px, calc(100% - 32px))",
+          padding: "14px 16px",
+          borderRadius: 14,
+          background: "#fff4f4",
+          border: "1px solid #f2c9cc",
+          color: "#351417",
+          fontWeight: 800,
+          lineHeight: 1.45,
+          textAlign: "center",
+        }}
+      >
+        ✅ Les commandes sont ouvertes — choisis tes plats et confirme ta commande. Elle sera envoyée directement au restaurant sélectionné.
+      </div>
       
       <section className="menu-section">
         <div className="section-heading">
