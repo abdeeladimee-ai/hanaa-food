@@ -6,8 +6,8 @@ const MAX_LIMIT = 200;
 const MAX_ORDER_BYTES = 64 * 1024;
 const MAX_ACTIVE_ORDERS_PER_PHONE = 2;
 const IP_WINDOW_MINUTES = 10;
-const IP_MAX_ATTEMPTS = 5;
-const IP_BLOCK_MINUTES = 30;
+const IP_MAX_ATTEMPTS = 10;
+const IP_BLOCK_MINUTES = 15;
 const TERMINAL_STATUSES = [
   "LIVRÉE",
   "RÉCUPÉRÉE",
@@ -129,11 +129,16 @@ async function orderingPaused(db) {
   return ordering.rows[0]?.value?.paused === true;
 }
 
-async function enforceIpGuard(req) {
+async function enforceIpGuard(req, phone) {
   const ip = clientIp(req);
   if (!ip) return;
 
-  const guardKey = sha256(`ip:${ip}`);
+  const phoneKey = normalizePhone(phone).slice(-9);
+  if (!phoneKey) return;
+
+  // Scope abuse protection to both connection and customer phone.
+  // Shared Wi-Fi / carrier NAT must not block every customer behind one IP.
+  const guardKey = sha256(`ip-phone:${ip}:${phoneKey}`);
   const result = await getPool().query(
     `insert into public.order_abuse_guard
       (guard_key, kind, window_started_at, attempts, blocked_until, last_seen_at)
@@ -200,7 +205,7 @@ async function createOrder(req, res) {
   }
 
   try {
-    await enforceIpGuard(req);
+    await enforceIpGuard(req, row.customer_phone);
   } catch (error) {
     if (error?.code === "ORDER_SUSPICIOUS_BLOCKED") {
       res.setHeader("Retry-After", String(error.retryAfterSeconds || 1800));
