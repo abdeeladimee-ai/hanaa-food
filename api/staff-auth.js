@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { issueStaffToken, verifiedStaffFromRequest } from "../lib/staffAuth.js";
+import { ensureSchema, getPool } from "../lib/neonDb.js";
 
 const accounts = [
   { id: "admin-dev", email: "admin@hanaa-food.test", name: "Admin", role: "ADMIN", branchId: null, branchName: null },
@@ -66,8 +67,35 @@ export default async function handler(req, res) {
     const action = String(body.action || "");
 
     if (action === "login") {
+      await ensureSchema();
       const account = findAccount(body.identifier);
-      if (!account || !safeEqual(body.password, expectedPassword(account.id))) {
+      if (!account) {
+        return res.status(401).json({ ok: false, code: "INVALID_STAFF_CREDENTIALS" });
+      }
+
+      const override = await getPool().query(
+        "select password_salt,password_hash from public.staff_password_overrides where account_id=$1 limit 1",
+        [account.id],
+      );
+
+      let valid = false;
+      if (override.rows[0]) {
+        try {
+          const actual = crypto.scryptSync(
+            String(body.password || ""),
+            Buffer.from(String(override.rows[0].password_salt || ""), "hex"),
+            64,
+          );
+          const expected = Buffer.from(String(override.rows[0].password_hash || ""), "hex");
+          valid = actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+        } catch {
+          valid = false;
+        }
+      } else {
+        valid = safeEqual(body.password, expectedPassword(account.id));
+      }
+
+      if (!valid) {
         return res.status(401).json({ ok: false, code: "INVALID_STAFF_CREDENTIALS" });
       }
 
