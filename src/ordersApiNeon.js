@@ -175,6 +175,10 @@ function removePendingOrderRow(orderId) {
   writePendingOrderRows(entries);
 }
 
+export function cancelPendingOrderRecovery(orderId) {
+  removePendingOrderRow(orderId);
+}
+
 function isRetryableOrderError(error) {
   const status = Number(error?.status || 0);
   const code = String(error?.code || "");
