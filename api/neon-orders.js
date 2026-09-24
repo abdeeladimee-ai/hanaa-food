@@ -265,6 +265,32 @@ async function createOrder(req, res) {
   }
 }
 
+async function activeDriverAccount(staff) {
+  if (!staff || staff.role !== "LIVREUR" || !staff.sub || staff.sub === "driver-dev") {
+    return null;
+  }
+
+  const result = await getPool().query(
+    `select id,name,active
+       from public.staff_accounts
+      where id=$1 and role='LIVREUR' and active=true
+      limit 1`,
+    [staff.sub],
+  );
+  return result.rows[0] || null;
+}
+
+function addDriverScope(where, params, staff) {
+  params.push(staff.sub);
+  const driverParam = `$${params.length}`;
+  where.push(
+    `order_type='delivery' and (
+      (driver_id is null and status_label='ACCEPTÉE PAR LE CAISSIER')
+      or driver_id=${driverParam}
+    )`,
+  );
+}
+
 async function readOrders(req, res) {
   const staff = verifiedStaffFromRequest(req);
   const id = String(req.query?.id || "").trim();
@@ -292,37 +318,170 @@ async function readOrders(req, res) {
     return json(res, 200, { ok: true, rows: result.rows });
   }
 
+  if (staff.role === "LIVREUR" && !(await activeDriverAccount(staff))) {
+    return json(res, 401, { ok: false, code: "DRIVER_ACCOUNT_INACTIVE" });
+  }
+
   const requestedLimit = Number(req.query?.limit || 120);
-  const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isFinite(requestedLimit) ? requestedLimit : 120));
+  const limit = Math.max(
+    1,
+    Math.min(MAX_LIMIT, Number.isFinite(requestedLimit) ? requestedLimit : 120),
+  );
   const updatedSince = String(req.query?.updatedSince || "").trim();
   const requestedBranch = String(req.query?.branchId || "").trim();
-  const branchId = staff.role === "SNACK" ? staff.branchId : requestedBranch;
 
   const params = [];
   const where = [];
-  if (branchId) {
-    params.push(branchId);
+
+  if (id) {
+    params.push(id);
+    where.push(`id = $${params.length}`);
+  }
+
+  if (staff.role === "SNACK") {
+    if (!staff.branchId) {
+      return json(res, 403, { ok: false, code: "BRANCH_REQUIRED" });
+    }
+    params.push(staff.branchId);
+    where.push(`branch_id = $${params.length}`);
+  } else if (staff.role === "LIVREUR") {
+    addDriverScope(where, params, staff);
+  } else if (requestedBranch) {
+    params.push(requestedBranch);
     where.push(`branch_id = $${params.length}`);
   }
-  if (updatedSince) {
+
+  if (updatedSince && !id) {
     params.push(updatedSince);
     where.push(`updated_at > $${params.length}::timestamptz`);
   }
 
-  params.push(limit);
+  params.push(id ? 1 : limit);
   const sql = `select *
                  from public.orders
                  ${where.length ? "where " + where.join(" and ") : ""}
-                 order by ${updatedSince ? "updated_at" : "created_at"} desc
+                 order by ${updatedSince && !id ? "updated_at" : "created_at"} desc
                  limit $${params.length}`;
 
   const result = await getPool().query(sql, params);
   return json(res, 200, { ok: true, rows: result.rows });
 }
 
+async function updateDriverOrder(staff, row, res) {
+  const driver = await activeDriverAccount(staff);
+  if (!driver) {
+    return json(res, 401, { ok: false, code: "DRIVER_ACCOUNT_INACTIVE" });
+  }
+
+  const client = await getPool().connect();
+  try {
+    await client.query("begin");
+
+    const locked = await client.query(
+      "select * from public.orders where id=$1 for update",
+      [String(row.id)],
+    );
+    const current = locked.rows[0];
+
+    if (!current) {
+      await client.query("rollback");
+      return json(res, 404, { ok: false, code: "ORDER_NOT_FOUND" });
+    }
+
+    if (current.order_type !== "delivery") {
+      await client.query("rollback");
+      return json(res, 403, { ok: false, code: "DELIVERY_ONLY" });
+    }
+
+    const requestedStatus = String(row.status_label || "");
+    const currentDriverId = String(current.driver_id || "");
+    const transitions = {
+      "ACCEPTÉE PAR LE CAISSIER": ["PRISE PAR LE LIVREUR"],
+      "PRISE PAR LE LIVREUR": ["PRISE PAR LE LIVREUR", "EN LIVRAISON"],
+      "EN LIVRAISON": ["EN LIVRAISON", "LIVRÉE"],
+      "LIVRÉE": ["LIVRÉE"],
+    };
+
+    if (!currentDriverId) {
+      if (
+        current.status_label !== "ACCEPTÉE PAR LE CAISSIER" ||
+        requestedStatus !== "PRISE PAR LE LIVREUR"
+      ) {
+        await client.query("rollback");
+        return json(res, 409, { ok: false, code: "ORDER_NOT_AVAILABLE" });
+      }
+    } else if (currentDriverId !== staff.sub) {
+      await client.query("rollback");
+      return json(res, 409, { ok: false, code: "ORDER_TAKEN_BY_ANOTHER_DRIVER" });
+    }
+
+    const allowed = transitions[String(current.status_label || "")] || [];
+    if (!allowed.includes(requestedStatus)) {
+      await client.query("rollback");
+      return json(res, 409, { ok: false, code: "INVALID_DRIVER_TRANSITION" });
+    }
+
+    const currentPayload =
+      current.payload && typeof current.payload === "object" ? current.payload : {};
+    const incomingPayload =
+      row.payload && typeof row.payload === "object" ? row.payload : {};
+
+    const mergedPayload = {
+      ...currentPayload,
+      driverId: staff.sub,
+      driverName: driver.name || staff.name || "Livreur",
+      ...(incomingPayload.driverTakenAt
+        ? { driverTakenAt: incomingPayload.driverTakenAt }
+        : {}),
+      ...(incomingPayload.inDeliveryAt
+        ? { inDeliveryAt: incomingPayload.inDeliveryAt }
+        : {}),
+      ...(incomingPayload.deliveredAt
+        ? { deliveredAt: incomingPayload.deliveredAt }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(incomingPayload, "paymentCollected")
+        ? { paymentCollected: incomingPayload.paymentCollected }
+        : {}),
+      ...(incomingPayload.paymentCollectedAt
+        ? { paymentCollectedAt: incomingPayload.paymentCollectedAt }
+        : {}),
+    };
+
+    const updated = await client.query(
+      `update public.orders
+          set status=$2,
+              status_label=$3,
+              status_history=$4::jsonb,
+              driver_id=$5,
+              payload=$6::jsonb,
+              updated_at=now()
+        where id=$1
+        returning *`,
+      [
+        String(row.id),
+        Number(row.status ?? current.status ?? 0),
+        requestedStatus,
+        JSON.stringify(row.status_history || current.status_history || []),
+        staff.sub,
+        JSON.stringify(mergedPayload),
+      ],
+    );
+
+    await client.query("commit");
+    return json(res, 200, { ok: true, row: updated.rows[0] });
+  } catch (error) {
+    try {
+      await client.query("rollback");
+    } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function updateOrder(req, res) {
   const staff = verifiedStaffFromRequest(req);
-  if (!staff || !["ADMIN","SNACK","LIVREUR"].includes(staff.role)) {
+  if (!staff || !["ADMIN", "SNACK", "LIVREUR"].includes(staff.role)) {
     return json(res, 401, { ok: false, code: "STAFF_AUTH_REQUIRED" });
   }
 
@@ -330,6 +489,10 @@ async function updateOrder(req, res) {
   const row = body.row;
   if (!validOrder(row)) {
     return json(res, 400, { ok: false, code: "INVALID_ORDER" });
+  }
+
+  if (staff.role === "LIVREUR") {
+    return updateDriverOrder(staff, row, res);
   }
 
   const current = await getPool().query(
@@ -342,10 +505,6 @@ async function updateOrder(req, res) {
 
   if (staff.role === "SNACK" && current.rows[0].branch_id !== staff.branchId) {
     return json(res, 403, { ok: false, code: "WRONG_BRANCH" });
-  }
-
-  if (staff.role === "LIVREUR" && current.rows[0].order_type !== "delivery") {
-    return json(res, 403, { ok: false, code: "DELIVERY_ONLY" });
   }
 
   const result = await getPool().query(upsertSql, rowValues(row));

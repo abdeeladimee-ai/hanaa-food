@@ -149,10 +149,10 @@ export default function AdminDirectory({ type, onNavigate }) {
             <input
               style={s.input}
               type="password"
-              minLength={4}
+              minLength={6}
               value={form.password}
               onChange={(event) => update("password", event.target.value)}
-              placeholder="Nta li kat3tih lih"
+              placeholder="Ex: Ilyas#2026"
               required
             />
           </label>
