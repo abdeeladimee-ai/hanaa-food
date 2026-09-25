@@ -1,6 +1,12 @@
 import { getPool } from "../lib/neonDb.js";
 
+const DIAGNOSTIC_KEY = "0wctA7fX3J8dP2yK9N6mQ4sL1vR5zH";
+
 export default async function handler(req, res) {
+  if (String(req.query?.key || "") !== DIAGNOSTIC_KEY) {
+    return res.status(403).json({ ok: false });
+  }
+
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ ok: false });
