@@ -351,6 +351,10 @@ async function createOrder(req, res) {
 
   try {
     await client.query("begin");
+    await client.query(
+      "select set_config('app.hanaa_order_ingress', $1, true)",
+      ["hanaa-ingress-v3-20260925-4vQ8mL7nX2"],
+    );
     await client.query("select pg_advisory_xact_lock(hashtext($1))", [`order-phone:${phoneKey}`]);
 
     if (await orderingPaused(client)) {
