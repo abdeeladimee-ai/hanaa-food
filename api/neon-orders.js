@@ -5,7 +5,7 @@ import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 const MAX_LIMIT = 200;
 const MAX_ORDER_BYTES = 64 * 1024;
 const MAX_ACTIVE_ORDERS_PER_PHONE = 2;
-const CUSTOMER_ORDERING_PAUSED = false;
+const CUSTOMER_ORDERING_PAUSED = true;
 const IP_WINDOW_MINUTES = 10;
 const IP_MAX_ATTEMPTS = 10;
 const IP_BLOCK_MINUTES = 15;

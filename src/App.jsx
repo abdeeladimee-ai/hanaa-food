@@ -1389,7 +1389,7 @@ function Home({
           textAlign: "center",
         }}
       >
-        ✅ Les commandes sont ouvertes — choisis tes plats et confirme ta commande. Elle sera envoyée directement au restaurant sélectionné.
+        ⏸️ Les commandes en ligne sont temporairement fermées pour maintenance de sécurité. Le menu reste accessible.
       </div>
       
       <section className="menu-section">
