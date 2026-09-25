@@ -10,6 +10,11 @@ const CUSTOMER_ORDERING_PAUSED = false;
 const IP_WINDOW_MINUTES = 10;
 const IP_MAX_ATTEMPTS = 10;
 const IP_BLOCK_MINUTES = 15;
+const CONNECTION_MAX_ATTEMPTS = 30;
+const CONNECTION_BLOCK_MINUTES = 30;
+const MAX_GLOBAL_ORDERS_PER_MINUTE = 30;
+const MAX_GLOBAL_ORDERS_PER_HOUR = 300;
+const ALLOWED_BRANCH_IDS = new Set(["tadart", "amgala", "rue-baghdad"]);
 const TERMINAL_STATUSES = [
   "LIVRÉE",
   "RÉCUPÉRÉE",
@@ -56,7 +61,13 @@ function validOrder(row) {
       ["delivery","pickup"].includes(String(row.order_type || "")) &&
       phone.length >= 9 &&
       phone.length <= 15 &&
-      String(row.branch_id || "").trim(),
+      ALLOWED_BRANCH_IDS.has(String(row.branch_id || "").trim()) &&
+      Array.isArray(row.items) &&
+      row.items.length > 0 &&
+      row.items.length <= 100 &&
+      Number.isFinite(Number(row.total)) &&
+      Number(row.total) > 0 &&
+      Number(row.total) <= 20000,
   );
 }
 
@@ -129,6 +140,81 @@ async function orderingPaused(db) {
     ["customer_ordering"],
   );
   return ordering.rows[0]?.value?.paused === true;
+}
+
+async function enforceConnectionGuard(req) {
+  const ip = clientIp(req);
+  if (!ip) return;
+
+  const guardKey = sha256(`ip-only:${ip}`);
+  const result = await getPool().query(
+    `insert into public.order_abuse_guard
+      (guard_key, kind, window_started_at, attempts, blocked_until, last_seen_at)
+     values ($1, 'ip-only', now(), 1, null, now())
+     on conflict (guard_key) do update set
+       attempts = case
+         when public.order_abuse_guard.window_started_at <= now() - ($2 || ' minutes')::interval
+           then 1
+         else public.order_abuse_guard.attempts + 1
+       end,
+       window_started_at = case
+         when public.order_abuse_guard.window_started_at <= now() - ($2 || ' minutes')::interval
+           then now()
+         else public.order_abuse_guard.window_started_at
+       end,
+       blocked_until = case
+         when public.order_abuse_guard.blocked_until > now()
+           then public.order_abuse_guard.blocked_until
+         when public.order_abuse_guard.window_started_at > now() - ($2 || ' minutes')::interval
+              and public.order_abuse_guard.attempts + 1 > $3
+           then now() + ($4 || ' minutes')::interval
+         else null
+       end,
+       last_seen_at = now()
+     returning attempts, blocked_until`,
+    [guardKey, String(IP_WINDOW_MINUTES), CONNECTION_MAX_ATTEMPTS, String(CONNECTION_BLOCK_MINUTES)],
+  );
+
+  const guard = result.rows[0];
+  if (guard?.blocked_until && new Date(guard.blocked_until).getTime() > Date.now()) {
+    const error = new Error("ORDER_SUSPICIOUS_BLOCKED");
+    error.code = "ORDER_SUSPICIOUS_BLOCKED";
+    error.status = 429;
+    error.retryAfterSeconds = Math.max(
+      60,
+      Math.ceil((new Date(guard.blocked_until).getTime() - Date.now()) / 1000),
+    );
+    throw error;
+  }
+}
+
+async function enforceGlobalOrderCeiling(client) {
+  await client.query(
+    "select pg_advisory_xact_lock(hashtext($1))",
+    ["hanaa-global-order-ceiling"],
+  );
+
+  const counts = await client.query(
+    `select
+       count(*) filter (where created_at >= now() - interval '1 minute')::int as last_minute,
+       count(*) filter (where created_at >= now() - interval '1 hour')::int as last_hour
+     from public.orders
+     where created_at >= now() - interval '1 hour'`,
+  );
+
+  const minute = Number(counts.rows[0]?.last_minute || 0);
+  const hour = Number(counts.rows[0]?.last_hour || 0);
+
+  if (
+    minute >= MAX_GLOBAL_ORDERS_PER_MINUTE ||
+    hour >= MAX_GLOBAL_ORDERS_PER_HOUR
+  ) {
+    const error = new Error("ORDER_TRAFFIC_LIMITED");
+    error.code = "ORDER_TRAFFIC_LIMITED";
+    error.status = 429;
+    error.retryAfterSeconds = minute >= MAX_GLOBAL_ORDERS_PER_MINUTE ? 60 : 300;
+    throw error;
+  }
 }
 
 async function enforceIpGuard(req, phone) {
@@ -219,6 +305,7 @@ async function createOrder(req, res) {
   }
 
   try {
+    await enforceConnectionGuard(req);
     await enforceIpGuard(req, row.customer_phone);
   } catch (error) {
     if (error?.code === "ORDER_SUSPICIOUS_BLOCKED") {
@@ -234,6 +321,32 @@ async function createOrder(req, res) {
 
   const phone = normalizePhone(row.customer_phone);
   const phoneKey = phone.slice(-9);
+  const serverNow = new Date().toISOString();
+  const initialStatusLabel = row.order_type === "delivery" ? "NOUVELLE" : "NOUVELLE COMMANDE";
+  const initialStatusHistory = [{ status: initialStatusLabel, at: serverNow }];
+  const serverRow = {
+    ...row,
+    customer_phone: phone,
+    status: 0,
+    status_label: initialStatusLabel,
+    status_history: initialStatusHistory,
+    driver_id: null,
+    created_at: serverNow,
+    updated_at: serverNow,
+    payload: {
+      ...(row.payload && typeof row.payload === "object" ? row.payload : {}),
+      id: String(row.id),
+      customerPhone: phone,
+      orderType: row.order_type,
+      branchId: row.branch_id,
+      status: 0,
+      statusLabel: initialStatusLabel,
+      statusHistory: initialStatusHistory,
+      driverId: null,
+      createdAt: serverNow,
+      updatedAt: serverNow,
+    },
+  };
   const client = await getPool().connect();
 
   try {
@@ -254,6 +367,21 @@ async function createOrder(req, res) {
       return json(res, 200, { ok: true, id: String(row.id), duplicate: true });
     }
 
+    try {
+      await enforceGlobalOrderCeiling(client);
+    } catch (error) {
+      await client.query("rollback");
+      if (error?.code === "ORDER_TRAFFIC_LIMITED") {
+        res.setHeader("Retry-After", String(error.retryAfterSeconds || 60));
+        return json(res, 429, {
+          ok: false,
+          code: "ORDER_TRAFFIC_LIMITED",
+          retryAfterSeconds: error.retryAfterSeconds || 60,
+        });
+      }
+      throw error;
+    }
+
     const active = await client.query(
       `select count(*)::int as count
          from public.orders
@@ -272,7 +400,7 @@ async function createOrder(req, res) {
       });
     }
 
-    await client.query(upsertSql, rowValues(row));
+    await client.query(upsertSql, rowValues(serverRow));
     await client.query("commit");
     return json(res, 201, { ok: true, id: String(row.id) });
   } catch (error) {
