@@ -15,6 +15,7 @@ const CONNECTION_BLOCK_MINUTES = 30;
 const MAX_GLOBAL_ORDERS_PER_MINUTE = 30;
 const MAX_GLOBAL_ORDERS_PER_HOUR = 300;
 const ALLOWED_BRANCH_IDS = new Set(["tadart", "amgala", "rue-baghdad"]);
+const ORDER_INGRESS_MARKER = "hanaa-ingress-v3-20260925-4vQ8mL7nX2";
 const TERMINAL_STATUSES = [
   "LIVRÉE",
   "RÉCUPÉRÉE",
@@ -353,7 +354,7 @@ async function createOrder(req, res) {
     await client.query("begin");
     await client.query(
       "select set_config('app.hanaa_order_ingress', $1, true)",
-      ["hanaa-ingress-v3-20260925-4vQ8mL7nX2"],
+      [ORDER_INGRESS_MARKER],
     );
     await client.query("select pg_advisory_xact_lock(hashtext($1))", [`order-phone:${phoneKey}`]);
 
@@ -528,6 +529,10 @@ async function updateDriverOrder(staff, row, res) {
   const client = await getPool().connect();
   try {
     await client.query("begin");
+    await client.query(
+      "select set_config('app.hanaa_order_ingress', $1, true)",
+      [ORDER_INGRESS_MARKER],
+    );
 
     const locked = await client.query(
       "select * from public.orders where id=$1 for update",
@@ -647,20 +652,39 @@ async function updateOrder(req, res) {
     return updateDriverOrder(staff, row, res);
   }
 
-  const current = await getPool().query(
-    "select branch_id, order_type from public.orders where id = $1 limit 1",
-    [String(row.id)],
-  );
-  if (!current.rows[0]) {
-    return json(res, 404, { ok: false, code: "ORDER_NOT_FOUND" });
-  }
+  const client = await getPool().connect();
+  try {
+    await client.query("begin");
+    await client.query(
+      "select set_config('app.hanaa_order_ingress', $1, true)",
+      [ORDER_INGRESS_MARKER],
+    );
 
-  if (staff.role === "SNACK" && current.rows[0].branch_id !== staff.branchId) {
-    return json(res, 403, { ok: false, code: "WRONG_BRANCH" });
-  }
+    const current = await client.query(
+      "select branch_id, order_type from public.orders where id = $1 limit 1",
+      [String(row.id)],
+    );
+    if (!current.rows[0]) {
+      await client.query("rollback");
+      return json(res, 404, { ok: false, code: "ORDER_NOT_FOUND" });
+    }
 
-  const result = await getPool().query(upsertSql, rowValues(row));
-  return json(res, 200, { ok: true, row: result.rows[0] });
+    if (staff.role === "SNACK" && current.rows[0].branch_id !== staff.branchId) {
+      await client.query("rollback");
+      return json(res, 403, { ok: false, code: "WRONG_BRANCH" });
+    }
+
+    const result = await client.query(upsertSql, rowValues(row));
+    await client.query("commit");
+    return json(res, 200, { ok: true, row: result.rows[0] });
+  } catch (error) {
+    try {
+      await client.query("rollback");
+    } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export default async function handler(req, res) {
