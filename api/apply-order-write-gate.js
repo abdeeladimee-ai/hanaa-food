@@ -3,11 +3,6 @@ import { getPool } from "../lib/neonDb.js";
 const APPLY_KEY = "Hanaa-Apply-Order-Gate-20260925-k9P4sT2m";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok: false, code: "METHOD_NOT_ALLOWED" });
-  }
-
   if (String(req.query?.key || "") !== APPLY_KEY) {
     return res.status(403).json({ ok: false, code: "FORBIDDEN" });
   }
