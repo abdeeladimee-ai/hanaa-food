@@ -192,6 +192,8 @@ function isRetryableOrderError(error) {
       "CUSTOMER_ORDERING_CLOSED",
       "INVALID_ORDER",
       "ORDER_TOO_LARGE",
+      "ORDER_PROOF_REQUIRED",
+      "ORDER_PROOF_ORIGIN_DENIED",
     ].includes(code)
   ) {
     return false;
@@ -511,7 +513,28 @@ async function submitOrderRow(row) {
     oversized.status = 413;
     throw oversized;
   }
-  await apiJson("/api/neon-orders", { method: "POST", body: JSON.stringify({ row }) }, ORDER_SUBMIT_TIMEOUT_MS);
+
+  const proof = await apiJson(
+    "/api/order-proof",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        orderId: row.id,
+        phone: row.customer_phone,
+      }),
+    },
+    6000,
+  );
+
+  await apiJson(
+    "/api/neon-orders",
+    {
+      method: "POST",
+      body: JSON.stringify({ row }),
+      headers: { "X-Hanaa-Order-Proof": proof.token },
+    },
+    ORDER_SUBMIT_TIMEOUT_MS,
+  );
 }
 
 export async function createOrder(order) {
