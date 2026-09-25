@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { verifyOrderProof } from "../lib/orderProof.js";
 import { ensureSchema, getPool, json } from "../lib/neonDb.js";
 import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 
@@ -193,7 +194,19 @@ async function createOrder(req, res) {
     return json(res, 413, { ok: false, code: "ORDER_TOO_LARGE" });
   }
 
-  if (CUSTOMER_ORDERING_PAUSED || await orderingPaused(getPool())) {
+  if (CUSTOMER_ORDERING_PAUSED) {
+    return json(res, 423, { ok: false, code: "CUSTOMER_ORDERING_PAUSED" });
+  }
+
+  const proof = String(req.headers["x-hanaa-order-proof"] || "").trim();
+  if (!verifyOrderProof(req, proof, {
+    orderId: row.id,
+    phone: row.customer_phone,
+  })) {
+    return json(res, 403, { ok: false, code: "ORDER_PROOF_REQUIRED" });
+  }
+
+  if (await orderingPaused(getPool())) {
     return json(res, 423, { ok: false, code: "CUSTOMER_ORDERING_PAUSED" });
   }
 
