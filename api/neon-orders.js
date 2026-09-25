@@ -245,7 +245,8 @@ async function createOrder(req, res) {
       `select count(*)::int as count
          from public.orders
         where right(regexp_replace(coalesce(customer_phone, ''), '[^0-9]', '', 'g'), 9) = $1
-          and upper(coalesce(status_label, '')) <> all($2::text[])`,
+          and upper(coalesce(status_label, '')) <> all($2::text[])
+          and created_at >= now() - interval '6 hours'`,
       [phoneKey, TERMINAL_STATUSES],
     );
 
