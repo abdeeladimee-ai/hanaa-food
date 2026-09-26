@@ -10,6 +10,7 @@ import DriverDashboard from "./pages/DriverDashboard";
 import AdminDirectory from "./pages/AdminDirectory";
 import Login from "./pages/Login";
 import { authorizedPath, getSession, homePathForRole } from "./auth";
+import { currentVerifiedPhone, normalizeMoroccanPhoneE164, sendPhoneOtp, verifyPhoneOtp } from "./phoneOtp";
 
 import { cancelPendingOrderRecovery, createOrder, getOrder, listOrders, subscribeOrder, subscribeOrders } from "./ordersApi";
 const routeViews = { "/login": "login", "/admin": "admin-dashboard", "/admin/commandes-livraison": "delivery-orders", "/admin/commandes-emporter": "pickup-orders", "/admin/livreurs": "driver-management", "/admin/utilisateurs": "user-management", "/snack": "snack-delivery", "/livreur": "driver" };
@@ -1882,6 +1883,11 @@ function Checkout({
   onPlace,
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSentPhone, setOtpSentPhone] = useState("");
+  const [otpVerifiedPhone, setOtpVerifiedPhone] = useState("");
+  const [otpBusy, setOtpBusy] = useState(false);
+  const [otpMessage, setOtpMessage] = useState("");
   const [data, setData] = useState(() => {
     let profile = {};
     try {
@@ -1899,11 +1905,78 @@ function Checkout({
       payment: "cash",
     };
   });
-  const update = (key, value) =>
+  const normalizedPhone = normalizeMoroccanPhoneE164(data.phone);
+  const phoneVerified =
+    Boolean(normalizedPhone) && otpVerifiedPhone === normalizedPhone;
+
+  useEffect(() => {
+    let active = true;
+    void currentVerifiedPhone()
+      .then((phone) => {
+        if (active && phone) setOtpVerifiedPhone(phone);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const update = (key, value) => {
+    if (key === "phone") {
+      setOtpCode("");
+      setOtpSentPhone("");
+      setOtpMessage("");
+    }
     setData((current) => ({ ...current, [key]: value }));
+  };
+
+  const requestOtp = async () => {
+    if (!phoneIsValid(data.phone) || otpBusy) return;
+    setOtpBusy(true);
+    setOtpMessage("");
+    try {
+      const sentPhone = await sendPhoneOtp(data.phone);
+      setOtpSentPhone(sentPhone);
+      setOtpCode("");
+      setOtpMessage("Code SMS tsift. Dkhel 6 chiffres li wslook.");
+    } catch (error) {
+      console.error("SMS OTP send failed:", error);
+      const message = String(error?.message || "").toLowerCase();
+      if (message.includes("provider") || message.includes("sms")) {
+        setOtpMessage("Service SMS mazal ma mconfigurach. 3awed jarrab mn b3d.");
+      } else if (message.includes("rate") || Number(error?.status) === 429) {
+        setOtpMessage("Tlebti code bzaaf. Tsena chwya w 3awed jarrab.");
+      } else {
+        setOtpMessage("Ma 9drnach nsifto code SMS daba. 3awed jarrab.");
+      }
+    } finally {
+      setOtpBusy(false);
+    }
+  };
+
+  const confirmOtp = async () => {
+    if (!normalizedPhone || otpCode.replace(/\D/g, "").length !== 6 || otpBusy) {
+      return;
+    }
+    setOtpBusy(true);
+    setOtpMessage("");
+    try {
+      const verified = await verifyPhoneOtp(data.phone, otpCode);
+      setOtpVerifiedPhone(verified);
+      setOtpSentPhone(verified);
+      setOtpMessage("Numéro vérifié ✓");
+    } catch (error) {
+      console.error("SMS OTP verify failed:", error);
+      setOtpMessage("Code ghalat wla sala. T2akked mn 6 chiffres w 3awed jarrab.");
+    } finally {
+      setOtpBusy(false);
+    }
+  };
+
   const valid =
     data.name &&
     phoneIsValid(data.phone) &&
+    phoneVerified &&
     Boolean(branch) &&
     (mode === "pickup" || Boolean(data.address));
   return (
@@ -1923,6 +1996,13 @@ function Checkout({
         onSubmit={async (event) => {
           event.preventDefault();
           if (!valid || submitting) return;
+
+          const sessionPhone = await currentVerifiedPhone().catch(() => "");
+          if (!sessionPhone || sessionPhone !== normalizedPhone) {
+            setOtpVerifiedPhone("");
+            setOtpMessage("Khass numéro téléphone يتأكد b code SMS 9bel lcommande.");
+            return;
+          }
 
           setSubmitting(true);
           try {
@@ -1985,6 +2065,58 @@ function Checkout({
             >
               Format marocain requis
             </small>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginTop: 10,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={requestOtp}
+                disabled={!phoneIsValid(data.phone) || otpBusy || phoneVerified}
+              >
+                {phoneVerified
+                  ? "Numéro vérifié ✓"
+                  : otpBusy
+                    ? "Patiente..."
+                    : otpSentPhone === normalizedPhone
+                      ? "Renvoyer le code SMS"
+                      : "Envoyer le code SMS"}
+              </button>
+              {otpSentPhone === normalizedPhone && !phoneVerified && (
+                <>
+                  <input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={otpCode}
+                    onChange={(event) =>
+                      setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
+                    placeholder="Code 6 chiffres"
+                    style={{ maxWidth: 180 }}
+                  />
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={confirmOtp}
+                    disabled={otpBusy || otpCode.length !== 6}
+                  >
+                    Vérifier
+                  </button>
+                </>
+              )}
+            </div>
+            {otpMessage && (
+              <small className={phoneVerified ? "field-help" : "field-error"}>
+                {otpMessage}
+              </small>
+            )}
           </label>
           {mode === "delivery" && (
             <>
