@@ -1,4 +1,5 @@
 import { issueOrderProof } from "../lib/orderProof.js";
+import { verifyPhoneVerificationToken } from "../lib/phoneVerification.js";
 
 const WINDOW_MS = 60 * 1000;
 const MAX_PROOFS_PER_WINDOW = 12;
@@ -78,9 +79,14 @@ export default async function handler(req, res) {
   const body = bodyOf(req);
   const orderId = String(body.orderId || "").trim();
   const phone = String(body.phone || "").trim();
+  const phoneVerificationToken = String(body.phoneVerificationToken || "").trim();
 
   if (!/^HF[A-Z0-9]{4,24}$/i.test(orderId) || !phone) {
     return res.status(400).json({ ok: false, code: "INVALID_ORDER_PROOF_REQUEST" });
+  }
+
+  if (!verifyPhoneVerificationToken(phoneVerificationToken, phone)) {
+    return send(res, 403, { ok: false, code: "PHONE_VERIFICATION_REQUIRED" });
   }
 
   const proof = issueOrderProof(req, { orderId, phone });
