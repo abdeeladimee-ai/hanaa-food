@@ -11,6 +11,8 @@ npm install
 npm run dev
 ```
 
+At checkout, customers must verify a Moroccan mobile number by SMS before placing an order. Twilio Verify sends and checks the code on the server; the order API requires a short-lived signed proof. Add these server-only variables in Vercel for Preview and Production: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`, and a random `PHONE_VERIFICATION_SECRET` with at least 32 characters. Do not prefix them with `VITE_`.
+
 Use a Moroccan phone number in the format `06XXXXXXXX`, `07XXXXXXXX`, `+2126XXXXXXXX`, or `+2127XXXXXXXX` at checkout.
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
