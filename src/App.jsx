@@ -1933,8 +1933,10 @@ function Checkout({
       setOtpMessage("Code SMS tsift. Dkhel 6 chiffres li wslook.");
     } catch (error) {
       console.error("SMS OTP send failed:", error);
-      const message = String(error?.message || "").toLowerCase();
-      if (message.includes("provider") || message.includes("sms")) {
+      const code = String(error?.code || error?.message || "").toLowerCase();
+      if (code.includes("not_configured")) {
+        setOtpMessage("Twilio mazal ma tconfigurach f site. Khass tzed les clés f Vercel.");
+      } else if (code.includes("provider") || code.includes("sms")) {
         setOtpMessage("Service SMS mazal ma mconfigurach. 3awed jarrab mn b3d.");
       } else if (message.includes("rate") || Number(error?.status) === 429) {
         setOtpMessage("Tlebti code bzaaf. Tsena chwya w 3awed jarrab.");
