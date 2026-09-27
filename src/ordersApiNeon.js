@@ -551,7 +551,8 @@ export async function createOrder(order) {
   if (createOrderInFlight) return createOrderInFlight;
 
   const request = (async () => {
-    const { phoneVerificationToken: _phoneVerificationToken, ...orderData } = order || {};
+    const orderData = { ...(order || {}) };
+    delete orderData.phoneVerificationToken;
     const row = toRow(orderData);
 
     // Persist locally before touching the network so a refresh/crash cannot
