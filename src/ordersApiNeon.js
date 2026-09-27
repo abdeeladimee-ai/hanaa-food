@@ -103,7 +103,7 @@ function normalizePendingOrderRows(saved, maxAgeMs = PENDING_ORDER_MAX_AGE_MS) {
         return null;
       }
 
-      return { row, queuedAt };
+      return { row, queuedAt, phoneVerificationToken: String(entry?.phoneVerificationToken || "") };
     })
     .filter(Boolean)
     .slice(-PENDING_ORDER_QUEUE_LIMIT);
@@ -149,7 +149,7 @@ function writePendingOrderRows(entries) {
   }
 }
 
-function enqueuePendingOrderRow(row) {
+function enqueuePendingOrderRow(row, phoneVerificationToken) {
   if (typeof window === "undefined") return;
 
   const id = String(row?.id || "").trim();
@@ -159,7 +159,7 @@ function enqueuePendingOrderRow(row) {
     (entry) => String(entry?.row?.id || "") !== id,
   );
 
-  entries.push({ row, queuedAt: new Date().toISOString() });
+  entries.push({ row, queuedAt: new Date().toISOString(), phoneVerificationToken: String(phoneVerificationToken || "") });
   writePendingOrderRows(entries);
 }
 
@@ -253,7 +253,7 @@ async function flushPendingOrderRows() {
     pendingOrdersLastAttemptAt = Date.now();
 
     try {
-      await submitOrderRow(row);
+      await submitOrderRow(row, entry?.phoneVerificationToken);
       removePendingOrderRow(id);
       rememberClientOrder(id);
     } catch (error) {
@@ -505,7 +505,7 @@ export async function getOrder(orderId) {
 const wait = (delayMs) =>
   new Promise((resolve) => window.setTimeout(resolve, delayMs));
 
-async function submitOrderRow(row) {
+async function submitOrderRow(row, phoneVerificationToken = "") {
   const encoded = new TextEncoder().encode(JSON.stringify(row));
   if (encoded.byteLength > MAX_ORDER_WRITE_BYTES) {
     const oversized = new Error("ORDER_TOO_LARGE");
@@ -521,6 +521,7 @@ async function submitOrderRow(row) {
       body: JSON.stringify({
         orderId: row.id,
         phone: row.customer_phone,
+        phoneVerificationToken,
       }),
     },
     6000,
@@ -539,18 +540,26 @@ async function submitOrderRow(row) {
 
 export async function createOrder(order) {
   assertCustomerOrderingOpen();
+  const phoneVerificationToken = String(order?.phoneVerificationToken || "").trim();
+  if (!hasStaffSession() && !phoneVerificationToken) {
+    const error = new Error("PHONE_VERIFICATION_REQUIRED");
+    error.code = "PHONE_VERIFICATION_REQUIRED";
+    error.status = 403;
+    throw error;
+  }
 
   if (createOrderInFlight) return createOrderInFlight;
 
   const request = (async () => {
-    const row = toRow(order);
+    const { phoneVerificationToken: _phoneVerificationToken, ...orderData } = order || {};
+    const row = toRow(orderData);
 
     // Persist locally before touching the network so a refresh/crash cannot
     // silently lose a customer's order.
-    enqueuePendingOrderRow(row);
+    enqueuePendingOrderRow(row, phoneVerificationToken);
 
     try {
-      await submitOrderRow(row);
+      await submitOrderRow(row, phoneVerificationToken);
       removePendingOrderRow(row.id);
 
       const savedOrder = fromRow(row);
