@@ -1,60 +1,35 @@
-import { requireSupabase } from "./supabase";
-
 export function normalizeMoroccanPhoneE164(value) {
   let digits = String(value || "").replace(/\D/g, "");
   if (digits.startsWith("00212")) digits = digits.slice(5);
   if (digits.startsWith("212")) digits = digits.slice(3);
   if (digits.startsWith("0")) digits = digits.slice(1);
-  if (!/^[67]\d{8}$/.test(digits)) return "";
-  return `+212${digits}`;
+  return /^[67]\d{8}$/.test(digits) ? `+212${digits}` : "";
 }
-
+async function request(action, phone, code = "") {
+  const response = await fetch("/api/phone-verification", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, phone, code }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.ok) {
+    const error = new Error(payload?.code || "PHONE_OTP_FAILED");
+    error.code = payload?.code || "";
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
 export async function sendPhoneOtp(value) {
   const phone = normalizeMoroccanPhoneE164(value);
-  if (!phone) {
-    const error = new Error("INVALID_PHONE");
-    error.code = "INVALID_PHONE";
-    throw error;
-  }
-
-  const { error } = await requireSupabase().auth.signInWithOtp({
-    phone,
-    options: { shouldCreateUser: true },
-  });
-
-  if (error) throw error;
-  return phone;
+  if (!phone) { const error = new Error("INVALID_PHONE"); error.code = "INVALID_PHONE"; throw error; }
+  return (await request("send", phone)).phone;
 }
-
 export async function verifyPhoneOtp(value, token) {
   const phone = normalizeMoroccanPhoneE164(value);
-  const code = String(token || "").replace(/\D/g, "").slice(0, 6);
-
-  if (!phone || code.length !== 6) {
-    const error = new Error("INVALID_OTP");
-    error.code = "INVALID_OTP";
-    throw error;
-  }
-
-  const { data, error } = await requireSupabase().auth.verifyOtp({
-    phone,
-    token: code,
-    type: "sms",
-  });
-
-  if (error) throw error;
-
-  const verifiedPhone = normalizeMoroccanPhoneE164(data?.user?.phone || "");
-  if (!verifiedPhone || verifiedPhone !== phone) {
-    const mismatch = new Error("PHONE_VERIFICATION_MISMATCH");
-    mismatch.code = "PHONE_VERIFICATION_MISMATCH";
-    throw mismatch;
-  }
-
-  return verifiedPhone;
-}
-
-export async function currentVerifiedPhone() {
-  const { data } = await requireSupabase().auth.getUser();
-  return normalizeMoroccanPhoneE164(data?.user?.phone || "");
+  const code = String(token || "").replace(/\D/g, "").slice(0, 10);
+  if (!phone || !/^\d{4,10}$/.test(code)) { const error = new Error("INVALID_OTP"); error.code = "INVALID_OTP"; throw error; }
+  const result = await request("check", phone, code);
+  if (result.phone !== phone || !result.token) { const error = new Error("PHONE_VERIFICATION_MISMATCH"); error.code = "PHONE_VERIFICATION_MISMATCH"; throw error; }
+  return { phone: result.phone, token: result.token };
 }
