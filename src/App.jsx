@@ -10,7 +10,7 @@ import DriverDashboard from "./pages/DriverDashboard";
 import AdminDirectory from "./pages/AdminDirectory";
 import Login from "./pages/Login";
 import { authorizedPath, getSession, homePathForRole } from "./auth";
-import { currentVerifiedPhone, normalizeMoroccanPhoneE164, sendPhoneOtp, verifyPhoneOtp } from "./phoneOtp";
+import { normalizeMoroccanPhoneE164, sendPhoneOtp, verifyPhoneOtp } from "./phoneOtp";
 
 import { cancelPendingOrderRecovery, createOrder, getOrder, listOrders, subscribeOrder, subscribeOrders } from "./ordersApi";
 const routeViews = { "/login": "login", "/admin": "admin-dashboard", "/admin/commandes-livraison": "delivery-orders", "/admin/commandes-emporter": "pickup-orders", "/admin/livreurs": "driver-management", "/admin/utilisateurs": "user-management", "/snack": "snack-delivery", "/livreur": "driver" };
@@ -1040,6 +1040,7 @@ function App() {
       id: `HF${Date.now().toString(36).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`,
       customerName: details.name,
       customerPhone: details.phone,
+      phoneVerificationToken: details.phoneVerificationToken,
       orderType: mode,
       branchId: branch?.id || "",
       branchName: branch?.name || "",
@@ -1886,6 +1887,7 @@ function Checkout({
   const [otpCode, setOtpCode] = useState("");
   const [otpSentPhone, setOtpSentPhone] = useState("");
   const [otpVerifiedPhone, setOtpVerifiedPhone] = useState("");
+  const [phoneVerificationToken, setPhoneVerificationToken] = useState("");
   const [otpBusy, setOtpBusy] = useState(false);
   const [otpMessage, setOtpMessage] = useState("");
   const [data, setData] = useState(() => {
@@ -1907,19 +1909,9 @@ function Checkout({
   });
   const normalizedPhone = normalizeMoroccanPhoneE164(data.phone);
   const phoneVerified =
-    Boolean(normalizedPhone) && otpVerifiedPhone === normalizedPhone;
+    Boolean(normalizedPhone) && otpVerifiedPhone === normalizedPhone && Boolean(phoneVerificationToken);
 
-  useEffect(() => {
-    let active = true;
-    void currentVerifiedPhone()
-      .then((phone) => {
-        if (active && phone) setOtpVerifiedPhone(phone);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, []);
+
 
   const update = (key, value) => {
     if (key === "phone") {
@@ -1962,8 +1954,9 @@ function Checkout({
     setOtpMessage("");
     try {
       const verified = await verifyPhoneOtp(data.phone, otpCode);
-      setOtpVerifiedPhone(verified);
-      setOtpSentPhone(verified);
+      setOtpVerifiedPhone(verified.phone);
+      setPhoneVerificationToken(verified.token);
+      setOtpSentPhone(verified.phone);
       setOtpMessage("Numéro vérifié ✓");
     } catch (error) {
       console.error("SMS OTP verify failed:", error);
@@ -1997,14 +1990,13 @@ function Checkout({
           event.preventDefault();
           if (!valid || submitting) return;
 
-          const sessionPhone = await currentVerifiedPhone().catch(() => "");
-          if (!sessionPhone || sessionPhone !== normalizedPhone) {
-            setOtpVerifiedPhone("");
+
+          if (!phoneVerificationToken || !phoneVerified) {
             setOtpMessage("Khass numéro téléphone يتأكد b code SMS 9bel lcommande.");
             return;
           }
 
-          setSubmitting(true);
+
           try {
             try {
               const existingProfile = JSON.parse(
@@ -2030,6 +2022,7 @@ function Checkout({
 
             await onPlace({
               ...data,
+              phoneVerificationToken,
               address: mode === "pickup" ? "" : data.address,
             });
           } finally {
