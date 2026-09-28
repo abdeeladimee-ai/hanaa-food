@@ -28,6 +28,23 @@ function opaqueRateKey(kind, value, authToken) {
     .digest("hex");
 }
 
+function rateProof(action, kind, key, timestamp, authToken) {
+  const secret = crypto
+    .createHash("sha256")
+    .update(`hanaa-supabase-order-v1|${authToken}`)
+    .digest();
+
+  const value =
+    action === "consume"
+      ? `consume|${kind}|${key}|${timestamp}`
+      : `${action}|${key}|${timestamp}`;
+
+  return crypto
+    .createHmac("sha256", secret)
+    .update(value)
+    .digest("hex");
+}
+
 async function rpc(name, body) {
   const response = await fetch(
     `${SUPABASE_URL}/rest/v1/rpc/${name}`,
@@ -43,19 +60,34 @@ async function rpc(name, body) {
     },
   );
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error("OTP_RATE_LIMIT_UNAVAILABLE");
+  if (!response.ok) {
+    console.error("OTP guard RPC failed", {
+      name,
+      status: response.status,
+      code: payload?.message || payload?.code,
+    });
+    throw new Error("OTP_RATE_LIMIT_UNAVAILABLE");
+  }
   return payload;
 }
 
-async function consumeLimit(kind, key) {
+async function consumeLimit(kind, key, authToken) {
+  const timestamp = Date.now();
   return rpc("consume_otp_rate_limit", {
     p_kind: kind,
     p_key: key,
+    p_timestamp: timestamp,
+    p_proof: rateProof("consume", kind, key, timestamp, authToken),
   });
 }
 
-async function checkFresh(key) {
-  return rpc("check_otp_fresh", { p_key: key });
+async function checkFresh(key, authToken) {
+  const timestamp = Date.now();
+  return rpc("check_otp_fresh", {
+    p_key: key,
+    p_timestamp: timestamp,
+    p_proof: rateProof("fresh", "", key, timestamp, authToken),
+  });
 }
 
 export default async function handler(req, res) {
@@ -85,7 +117,7 @@ export default async function handler(req, res) {
   const phoneKey = opaqueRateKey("phone", phone, authToken);
 
   try {
-    const fresh = await checkFresh(phoneKey);
+    const fresh = await checkFresh(phoneKey, authToken);
     if (fresh?.ok !== true) {
       return res.status(400).json({
         ok: false,
@@ -98,10 +130,11 @@ export default async function handler(req, res) {
     }
 
     const checks = await Promise.all([
-      consumeLimit("check_phone", phoneKey),
+      consumeLimit("check_phone", phoneKey, authToken),
       consumeLimit(
         "check_ip",
         opaqueRateKey("ip", clientIp(req), authToken),
+        authToken,
       ),
     ]);
 
