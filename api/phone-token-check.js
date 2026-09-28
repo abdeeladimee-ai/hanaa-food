@@ -1,6 +1,7 @@
 import {
   normalizeMoroccanPhoneE164,
   verifyPhoneVerificationToken,
+  verifyTrustedPhoneToken,
 } from "../lib/phoneVerification.js";
 
 export default function handler(req, res) {
@@ -25,7 +26,8 @@ export default function handler(req, res) {
     return res.status(400).json({ ok: false, code: "PHONE_TOKEN_INVALID" });
   }
 
-  const payload = verifyPhoneVerificationToken(token, phone);
+  const shortPayload = verifyPhoneVerificationToken(token, phone);
+  const payload = shortPayload || verifyTrustedPhoneToken(token, phone);
   if (!payload) {
     return res.status(403).json({ ok: false, code: "PHONE_TOKEN_INVALID" });
   }
@@ -33,6 +35,7 @@ export default function handler(req, res) {
   return res.status(200).json({
     ok: true,
     phone,
+    trusted: !shortPayload,
     expiresAt: payload.exp,
   });
 }
