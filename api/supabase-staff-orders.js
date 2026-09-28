@@ -1,3 +1,4 @@
+// Supabase-only staff order access.
 import crypto from "node:crypto";
 import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 
