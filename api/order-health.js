@@ -1,5 +1,59 @@
+import crypto from "node:crypto";
+
 const EDGE_HEALTH_URL =
   "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/submit-order-otp?health=1";
+const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
+const SUPABASE_ANON_JWT =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdya2V6eGhzd2ZvY3FsdnVqemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NTE1MjIsImV4cCI6MjEwNjAyNzUyMn0.IoIO9FJ_F612fv3a9iiotWv871S8E7Gs3Y02DSSHfHs";
+
+function rateProof(action, key, timestamp, authToken) {
+  const secret = crypto
+    .createHash("sha256")
+    .update(`hanaa-supabase-order-v1|${authToken}`)
+    .digest();
+
+  return crypto
+    .createHmac("sha256", secret)
+    .update(`${action}|${key}|${timestamp}`)
+    .digest("hex");
+}
+
+async function checkOtpGuard(authToken) {
+  const key = crypto
+    .createHash("sha256")
+    .update("hanaa-health-check")
+    .digest("hex");
+  const timestamp = Date.now();
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/rpc/check_otp_fresh`,
+      {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_JWT,
+          Authorization: `Bearer ${SUPABASE_ANON_JWT}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          p_key: key,
+          p_timestamp: timestamp,
+          p_proof: rateProof("fresh", key, timestamp, authToken),
+        }),
+        signal: AbortSignal.timeout(5000),
+      },
+    );
+
+    const payload = await response.json().catch(() => ({}));
+    return (
+      response.ok &&
+      payload?.ok === false &&
+      payload?.code === "OTP_NOT_SENT"
+    );
+  } catch {
+    return false;
+  }
+}
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -9,29 +63,36 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, code: "METHOD_NOT_ALLOWED" });
   }
 
+  const authToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();
   const twilioConfigured = Boolean(
     String(process.env.TWILIO_ACCOUNT_SID || "").trim() &&
-      String(process.env.TWILIO_AUTH_TOKEN || "").trim() &&
+      authToken &&
       String(process.env.TWILIO_VERIFY_SERVICE_SID || "").trim(),
   );
 
   try {
-    const response = await fetch(EDGE_HEALTH_URL, {
-      signal: AbortSignal.timeout(7000),
-    });
-    const edge = await response.json().catch(() => ({}));
+    const [edgeResponse, otpGuard] = await Promise.all([
+      fetch(EDGE_HEALTH_URL, {
+        signal: AbortSignal.timeout(7000),
+      }),
+      authToken ? checkOtpGuard(authToken) : Promise.resolve(false),
+    ]);
+
+    const edge = await edgeResponse.json().catch(() => ({}));
 
     const ok =
-      response.ok &&
+      edgeResponse.ok &&
       edge?.ok === true &&
       edge?.database === true &&
-      twilioConfigured;
+      twilioConfigured &&
+      otpGuard;
 
     return res.status(ok ? 200 : 503).json({
       ok,
       twilioConfigured,
       database: edge?.database === true,
       orderingPaused: edge?.orderingPaused === true,
+      otpGuard,
       edgeCode: edge?.code || null,
     });
   } catch (error) {
@@ -40,6 +101,7 @@ export default async function handler(req, res) {
       twilioConfigured,
       database: false,
       orderingPaused: false,
+      otpGuard: false,
       edgeCode:
         error?.name === "TimeoutError" || error?.name === "AbortError"
           ? "EDGE_HEALTH_TIMEOUT"
