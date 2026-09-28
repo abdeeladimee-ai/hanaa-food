@@ -1,7 +1,7 @@
 (() => {
   if (/^\/(admin|snack|livreur|login)(\/|$)/.test(window.location.pathname)) return;
 
-  const PROFILE_KEY = "hanaa-client-profile";
+  const PROFILE_KEY = "hanaa-client-profile-v2";
   const STYLE_ID = "hanaa-account-ui-style";
   const CARD_ID = "hanaa-account-profile-card";
   let scheduled = false;
