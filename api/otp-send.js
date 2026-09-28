@@ -39,6 +39,23 @@ function opaqueRateKey(kind, value, authToken) {
     .digest("hex");
 }
 
+function rateProof(action, kind, key, timestamp, authToken) {
+  const secret = crypto
+    .createHash("sha256")
+    .update(`hanaa-supabase-order-v1|${authToken}`)
+    .digest();
+
+  const value =
+    action === "consume"
+      ? `consume|${kind}|${key}|${timestamp}`
+      : `${action}|${key}|${timestamp}`;
+
+  return crypto
+    .createHmac("sha256", secret)
+    .update(value)
+    .digest("hex");
+}
+
 async function rpc(name, body) {
   const response = await fetch(
     `${SUPABASE_URL}/rest/v1/rpc/${name}`,
@@ -54,19 +71,34 @@ async function rpc(name, body) {
     },
   );
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error("OTP_RATE_LIMIT_UNAVAILABLE");
+  if (!response.ok) {
+    console.error("OTP guard RPC failed", {
+      name,
+      status: response.status,
+      code: payload?.message || payload?.code,
+    });
+    throw new Error("OTP_RATE_LIMIT_UNAVAILABLE");
+  }
   return payload;
 }
 
-async function consumeLimit(kind, key) {
+async function consumeLimit(kind, key, authToken) {
+  const timestamp = Date.now();
   return rpc("consume_otp_rate_limit", {
     p_kind: kind,
     p_key: key,
+    p_timestamp: timestamp,
+    p_proof: rateProof("consume", kind, key, timestamp, authToken),
   });
 }
 
-async function reserveSend(key) {
-  return rpc("reserve_otp_send", { p_key: key });
+async function reserveSend(key, authToken) {
+  const timestamp = Date.now();
+  return rpc("reserve_otp_send", {
+    p_key: key,
+    p_timestamp: timestamp,
+    p_proof: rateProof("reserve", "", key, timestamp, authToken),
+  });
 }
 
 export default async function handler(req, res) {
@@ -91,9 +123,9 @@ export default async function handler(req, res) {
 
   try {
     const checks = await Promise.all([
-      consumeLimit("send_phone_day", phoneKey),
-      consumeLimit("send_ip", ipKey),
-      consumeLimit("send_ip_day", ipKey),
+      consumeLimit("send_phone_day", phoneKey, token),
+      consumeLimit("send_ip", ipKey, token),
+      consumeLimit("send_ip_day", ipKey, token),
     ]);
 
     const denied = checks.find((item) => item?.ok === false);
@@ -107,7 +139,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const reservation = await reserveSend(phoneKey);
+    const reservation = await reserveSend(phoneKey, token);
     if (reservation?.ok === false) {
       const retryAfter = Math.max(
         1,
