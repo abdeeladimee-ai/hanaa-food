@@ -11,7 +11,7 @@ import AdminDirectory from "./pages/AdminDirectory";
 import Login from "./pages/Login";
 import { authorizedPath, getSession, homePathForRole } from "./auth";
 
-import { cancelPendingOrderRecovery, createOrder, getOrder, listOrders, subscribeOrder, subscribeOrders } from "./ordersApiNeon";
+import { cancelPendingOrderRecovery, createOrder, getOrder, listOrders, subscribeOrder, subscribeOrders } from "./ordersApi";
 const routeViews = { "/login": "login", "/admin": "admin-dashboard", "/admin/commandes-livraison": "delivery-orders", "/admin/commandes-emporter": "pickup-orders", "/admin/livreurs": "driver-management", "/admin/utilisateurs": "user-management", "/snack": "snack-delivery", "/livreur": "driver" };
 
 const photo = (id) =>
