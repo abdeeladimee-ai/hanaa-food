@@ -227,7 +227,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    await ensureSchema();
     const body = bodyOf(req);
     const action = String(body.action || "");
 
@@ -241,6 +240,7 @@ export default async function handler(req, res) {
         });
       }
 
+      await ensureSchema();
       const dynamic = await dynamicLogin(body.identifier, body.password);
       if (!dynamic) {
         return res.status(401).json({ ok: false, code: "INVALID_STAFF_CREDENTIALS" });
@@ -253,6 +253,7 @@ export default async function handler(req, res) {
       });
     }
 
+    await ensureSchema();
     if (action === "list") return listAccounts(req, res);
     if (action === "upsert") return upsertAccount(req, res, body);
     if (action === "toggle") return toggleAccount(req, res, body);
