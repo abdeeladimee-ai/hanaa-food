@@ -5,9 +5,8 @@ import {
   normalizeMoroccanPhoneE164,
 } from "../lib/phoneVerification.js";
 
-const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
-const SUPABASE_ANON_JWT =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdya2V6eGhzd2ZvY3FsdnVqemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NTE1MjIsImV4cCI6MjEwNjAyNzUyMn0.IoIO9FJ_F612fv3a9iiotWv871S8E7Gs3Y02DSSHfHs";
+const RATE_LIMIT_URL =
+  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/otp-rate-limit";
 
 function clientIp(req) {
   return (
@@ -31,7 +30,7 @@ function opaqueRateKey(kind, value, authToken) {
 function rateProof(action, kind, key, timestamp, authToken) {
   const secret = crypto
     .createHash("sha256")
-    .update(`hanaa-supabase-order-v1|${authToken}`)
+    .update(`hanaa-rate-edge-v1|${authToken}`)
     .digest();
 
   const value =
@@ -45,26 +44,27 @@ function rateProof(action, kind, key, timestamp, authToken) {
     .digest("hex");
 }
 
-async function rpc(name, body) {
-  const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/rpc/${name}`,
-    {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_ANON_JWT,
-        Authorization: `Bearer ${SUPABASE_ANON_JWT}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(5000),
-    },
-  );
+async function rateRequest(action, kind, key, authToken) {
+  const timestamp = Date.now();
+  const response = await fetch(RATE_LIMIT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action,
+      kind,
+      key,
+      timestamp,
+      proof: rateProof(action, kind, key, timestamp, authToken),
+    }),
+    signal: AbortSignal.timeout(6000),
+  });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    console.error("OTP guard RPC failed", {
-      name,
+    console.error("OTP guard Edge failed", {
+      action,
+      kind,
       status: response.status,
-      code: payload?.message || payload?.code,
+      code: payload?.code,
     });
     throw new Error("OTP_RATE_LIMIT_UNAVAILABLE");
   }
@@ -72,22 +72,11 @@ async function rpc(name, body) {
 }
 
 async function consumeLimit(kind, key, authToken) {
-  const timestamp = Date.now();
-  return rpc("consume_otp_rate_limit", {
-    p_kind: kind,
-    p_key: key,
-    p_timestamp: timestamp,
-    p_proof: rateProof("consume", kind, key, timestamp, authToken),
-  });
+  return rateRequest("consume", kind, key, authToken);
 }
 
 async function checkFresh(key, authToken) {
-  const timestamp = Date.now();
-  return rpc("check_otp_fresh", {
-    p_key: key,
-    p_timestamp: timestamp,
-    p_proof: rateProof("fresh", "", key, timestamp, authToken),
-  });
+  return rateRequest("fresh", "", key, authToken);
 }
 
 export default async function handler(req, res) {
