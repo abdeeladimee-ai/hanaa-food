@@ -104,6 +104,38 @@ async function reserveSend(key, authToken) {
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
+  const config = twilioConfig();
+
+  if (req.method === "GET" && String(req.query?.health || "") === "1") {
+    if (!config.sid || !config.token || !config.service) {
+      return res.status(503).json({
+        ok: false,
+        twilioConfigured: false,
+        signedLimiter: false,
+      });
+    }
+
+    try {
+      const healthKey = opaqueRateKey(
+        "health",
+        "otp-send",
+        config.token,
+      );
+      await reserveSend(healthKey, config.token);
+      return res.status(200).json({
+        ok: true,
+        twilioConfigured: true,
+        signedLimiter: true,
+      });
+    } catch {
+      return res.status(503).json({
+        ok: false,
+        twilioConfigured: true,
+        signedLimiter: false,
+      });
+    }
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, code: "METHOD_NOT_ALLOWED" });
   }
@@ -113,7 +145,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ ok: false, code: "INVALID_PHONE" });
   }
 
-  const { sid, token, service } = twilioConfig();
+  const { sid, token, service } = config;
   if (!sid || !token || !service) {
     return res.status(503).json({ ok: false, code: "OTP_NOT_CONFIGURED" });
   }
