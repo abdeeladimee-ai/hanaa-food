@@ -1022,7 +1022,7 @@ function App() {
         )
         .filter((item) => item.quantity > 0),
     );
-  const place = async (details, phoneVerificationToken) => {
+  const place = async (details, otpCode) => {
     const unavailableItems = cart.filter((cartItem) => {
       const product = products.find((item) => item.id === cartItem.productId);
       return isProductRuptureAtBranch(product, branch);
@@ -1058,7 +1058,7 @@ function App() {
       createdAt: new Date().toISOString(),
     };
     try {
-      const savedOrder = await createOrder(next, { phoneVerificationToken });
+      const savedOrder = await createOrder(next, { otpCode });
       setOrder(savedOrder);
 
       if (savedOrder?.pendingSync) {
@@ -1114,7 +1114,19 @@ function App() {
         window.alert("T2akked mn numéro téléphone w ma3loumat dyal commande.");
         return;
       }
-      window.alert("Commande ma tsajlatch. T2akked mn internet w 3awed jarrab.");
+      if (error?.code === "OTP_INVALID" || error?.message === "OTP_INVALID") {
+        window.alert("Code SMS ghalat wla sala. 3awed dkhel code s7i7.");
+        return;
+      }
+      if (error?.code === "OTP_RATE_LIMITED" || error?.message === "OTP_RATE_LIMITED") {
+        window.alert("Tjarrab code bzzaf. Tsena chwya w 3awed.");
+        return;
+      }
+      if (error?.code === "OTP_NOT_CONFIGURED" || error?.message === "OTP_NOT_CONFIGURED") {
+        window.alert("Verification SMS ma khddamach daba. 3awed jarrab mn b3d.");
+        return;
+      }
+      window.alert("Commande ma tsajlatch. 3awed jarrab.");
       return;
     }
     setCart([]);
@@ -1987,28 +1999,12 @@ function Checkout({
               return;
             }
 
-            const response = await fetch("/api/otp-check", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ phone: data.phone, code: cleanCode }),
-            });
-            const payload = await response.json().catch(() => ({}));
-
-            if (!response.ok || payload?.ok !== true || !payload?.token) {
-              setOtpError(
-                payload?.code === "OTP_RATE_LIMITED"
-                  ? "Tjarrab code bzzaf. Tsena chwya w 3awed."
-                  : "Code SMS ghalat. 3awed dkhlou.",
-              );
-              return;
-            }
-
             await onPlace(
               {
                 ...data,
                 address: mode === "pickup" ? "" : data.address,
               },
-              payload.token,
+              cleanCode,
             );
           } catch (error) {
             console.error("Checkout OTP failed:", error);
