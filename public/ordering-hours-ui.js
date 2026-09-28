@@ -3,6 +3,8 @@
 
   const BANNER_ID = "hanaa-ordering-paused-banner";
   const MESSAGE = "Les commandes sont temporairement indisponibles. Merci de réessayer plus tard.";
+  const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_P_ADKKjVA91hIFkgFN4H6Q_OH1rxmSX";
   let paused = true;
   let refreshTimer = null;
 
@@ -41,8 +43,7 @@
   };
 
   const syncUi = () => {
-    if (paused) showBanner();
-    else hideBanner();
+    hideBanner();
 
     findCommanderButtons().forEach((button) => {
       if (paused) {
@@ -65,10 +66,19 @@
 
   const refreshStatus = async () => {
     try {
-      const response = await fetch("/api/neon-settings", { cache: "no-store" });
-      const payload = await response.json().catch(() => ({}));
-      if (response.ok && payload?.ok !== false) {
-        paused = payload.paused === true;
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/app_settings?key=eq.customer_ordering&select=value`,
+        {
+          cache: "no-store",
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+        },
+      );
+      const payload = await response.json().catch(() => []);
+      if (response.ok) {
+        paused = payload?.[0]?.value?.paused === true;
         syncUi();
       }
     } catch {
