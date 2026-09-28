@@ -2,19 +2,23 @@ import crypto from "node:crypto";
 
 const EDGE_HEALTH_URL =
   "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/submit-order-otp?health=1";
-const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
-const SUPABASE_ANON_JWT =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdya2V6eGhzd2ZvY3FsdnVqemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NTE1MjIsImV4cCI6MjEwNjAyNzUyMn0.IoIO9FJ_F612fv3a9iiotWv871S8E7Gs3Y02DSSHfHs";
+const OTP_GUARD_URL =
+  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/otp-rate-limit";
 
-function rateProof(action, key, timestamp, authToken) {
+function rateProof(action, kind, key, timestamp, authToken) {
   const secret = crypto
     .createHash("sha256")
-    .update(`hanaa-supabase-order-v1|${authToken}`)
+    .update(`hanaa-rate-edge-v1|${authToken}`)
     .digest();
+
+  const value =
+    action === "consume"
+      ? `consume|${kind}|${key}|${timestamp}`
+      : `${action}|${key}|${timestamp}`;
 
   return crypto
     .createHmac("sha256", secret)
-    .update(`${action}|${key}|${timestamp}`)
+    .update(value)
     .digest("hex");
 }
 
@@ -26,23 +30,18 @@ async function checkOtpGuard(authToken) {
   const timestamp = Date.now();
 
   try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/rpc/check_otp_fresh`,
-      {
-        method: "POST",
-        headers: {
-          apikey: SUPABASE_ANON_JWT,
-          Authorization: `Bearer ${SUPABASE_ANON_JWT}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          p_key: key,
-          p_timestamp: timestamp,
-          p_proof: rateProof("fresh", key, timestamp, authToken),
-        }),
-        signal: AbortSignal.timeout(5000),
-      },
-    );
+    const response = await fetch(OTP_GUARD_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "fresh",
+        kind: "",
+        key,
+        timestamp,
+        proof: rateProof("fresh", "", key, timestamp, authToken),
+      }),
+      signal: AbortSignal.timeout(6000),
+    });
 
     const payload = await response.json().catch(() => ({}));
     return (
