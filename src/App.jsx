@@ -1022,6 +1022,39 @@ function App() {
         )
         .filter((item) => item.quantity > 0),
     );
+  const verifyOrderPhone = async (phone) => {
+    const send = await fetch("/api/otp-send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+    });
+    const sendPayload = await send.json().catch(() => ({}));
+    if (!send.ok || sendPayload?.ok === false) {
+      const error = new Error(sendPayload?.code || "OTP_SEND_FAILED");
+      error.code = sendPayload?.code || "OTP_SEND_FAILED";
+      throw error;
+    }
+
+    const code = window.prompt("Code SMS tsift l numéro dyalek. Dkhel code OTP:");
+    if (!code) {
+      const error = new Error("OTP_CANCELLED");
+      error.code = "OTP_CANCELLED";
+      throw error;
+    }
+
+    const check = await fetch("/api/otp-check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, code: String(code).trim() }),
+    });
+    const checkPayload = await check.json().catch(() => ({}));
+    if (!check.ok || checkPayload?.ok !== true) {
+      const error = new Error(checkPayload?.code || "OTP_INVALID");
+      error.code = checkPayload?.code || "OTP_INVALID";
+      throw error;
+    }
+  };
+
   const place = async (details) => {
     const unavailableItems = cart.filter((cartItem) => {
       const product = products.find((item) => item.id === cartItem.productId);
@@ -1032,6 +1065,18 @@ function App() {
       window.alert(
         "Kayna chi produits RUPTURE f Hanaa Food Rue Baghdad. 7yedhom mn panier w 3awed jarrab.",
       );
+      return;
+    }
+
+    try {
+      await verifyOrderPhone(details.phone);
+    } catch (error) {
+      if (error?.code === "OTP_CANCELLED") return;
+      if (error?.code === "OTP_INVALID") {
+        window.alert("Code OTP ghalat. Commande ma tconfirmatch.");
+        return;
+      }
+      window.alert("Ma 9drnach nsifto code SMS daba. Commande ma tconfirmatch.");
       return;
     }
 
