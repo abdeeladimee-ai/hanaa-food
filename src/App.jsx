@@ -14,6 +14,30 @@ import { authorizedPath, getSession, homePathForRole } from "./auth";
 import { cancelPendingOrderRecovery, createOrder, getOrder, listOrders, subscribeOrder, subscribeOrders } from "./ordersApi";
 const routeViews = { "/login": "login", "/admin": "admin-dashboard", "/admin/commandes-livraison": "delivery-orders", "/admin/commandes-emporter": "pickup-orders", "/admin/livreurs": "driver-management", "/admin/utilisateurs": "user-management", "/snack": "snack-delivery", "/livreur": "driver" };
 
+const CLIENT_PROFILE_KEY = "hanaa-client-profile-v2";
+const CLIENT_TRUST_KEY = "hanaa-client-trust-v2";
+const CLIENT_RESET_KEY = "hanaa-client-reset-20260928-v2";
+const clientPhoneKey = (value = "") =>
+  String(value || "").replace(/\D/g, "").slice(-9);
+
+if (typeof window !== "undefined") {
+  try {
+    if (localStorage.getItem(CLIENT_RESET_KEY) !== "1") {
+      [
+        CLIENT_PROFILE_KEY,
+        "hanaa-client-trust-v1",
+        "hanaa-client-order-ids",
+        "hanaa-client-order-ids-by-phone",
+        "hanaa-order",
+        "hanaa-order-tracking-tokens-v1",
+        "hanaa-pending-order-writes-v2",
+      ].forEach((key) => localStorage.removeItem(key));
+      sessionStorage.removeItem("hanaa-profile-required-order");
+      localStorage.setItem(CLIENT_RESET_KEY, "1");
+    }
+  } catch {}
+}
+
 const photo = (id) =>
   `https://images.unsplash.com/${id}?auto=format&fit=crop&w=900&q=82`;
 const categories = [
@@ -1114,6 +1138,17 @@ function App() {
         window.alert("T2akked mn numéro téléphone w ma3loumat dyal commande.");
         return;
       }
+      if (
+        error?.code === "PHONE_TOKEN_INVALID" ||
+        error?.message === "PHONE_TOKEN_INVALID" ||
+        error?.code === "PHONE_VERIFICATION_REQUIRED" ||
+        error?.message === "PHONE_VERIFICATION_REQUIRED"
+      ) {
+        try {
+          localStorage.removeItem(CLIENT_TRUST_KEY);
+        } catch {}
+        throw error;
+      }
       if (error?.code === "OTP_INVALID" || error?.message === "OTP_INVALID") {
         window.alert("Code SMS ghalat wla sala. 3awed dkhel code s7i7.");
         return;
@@ -1897,11 +1932,13 @@ function Checkout({
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState("");
   const [verifiedToken, setVerifiedToken] = useState("");
+  const [otpSentAt, setOtpSentAt] = useState(0);
+  const [otpClock, setOtpClock] = useState(Date.now());
   const [otpError, setOtpError] = useState("");
   const [data, setData] = useState(() => {
     let profile = {};
     try {
-      profile = JSON.parse(localStorage.getItem("hanaa-client-profile") || "{}");
+      profile = JSON.parse(localStorage.getItem(CLIENT_PROFILE_KEY) || "{}");
     } catch {
       profile = {};
     }
@@ -1915,9 +1952,85 @@ function Checkout({
       payment: "cash",
     };
   });
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(CLIENT_TRUST_KEY) || "null",
+      );
+      const matches =
+        saved?.token &&
+        Number(saved?.expiresAt || 0) > Date.now() &&
+        clientPhoneKey(saved?.phone) &&
+        clientPhoneKey(saved?.phone) === clientPhoneKey(data.phone);
+
+      if (matches) {
+        setVerifiedToken(String(saved.token));
+      } else {
+        setVerifiedToken("");
+        if (saved && Number(saved?.expiresAt || 0) <= Date.now()) {
+          localStorage.removeItem(CLIENT_TRUST_KEY);
+        }
+      }
+    } catch {
+      setVerifiedToken("");
+    }
+  }, [data.phone]);
+
+  useEffect(() => {
+    if (!otpSentAt || verifiedToken) return undefined;
+    setOtpClock(Date.now());
+    const timer = window.setInterval(() => setOtpClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [otpSentAt, verifiedToken]);
+
+  const codeExpiresIn = otpSentAt
+    ? Math.max(0, Math.ceil((otpSentAt + 60_000 - otpClock) / 1000))
+    : 0;
+  const resendIn = otpSentAt
+    ? Math.max(0, Math.ceil((otpSentAt + 5 * 60_000 - otpClock) / 1000))
+    : 0;
+  const codeExpired = Boolean(
+    otpSent && !verifiedToken && otpSentAt && codeExpiresIn === 0,
+  );
+
+  const requestOtp = async () => {
+    setOtpError("");
+
+    const response = await fetch("/api/otp-send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: data.phone }),
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok || payload?.ok === false) {
+      if (payload?.code === "OTP_RESEND_WAIT") {
+        const seconds = Math.max(
+          1,
+          Number(payload?.retryAfter || response.headers.get("Retry-After") || 300),
+        );
+        setOtpError(
+          `Khassk tsenna ${Math.ceil(seconds / 60)} d9i9a 9bel ma tsift code jdid.`,
+        );
+      } else if (payload?.code === "OTP_RATE_LIMITED") {
+        setOtpError("Tjarrab bzzaf. Tsena chwya w 3awed.");
+      } else {
+        setOtpError("Ma 9drnach nsifto SMS daba. 3awed jarrab.");
+      }
+      return false;
+    }
+
+    setOtpSent(true);
+    setOtpSentAt(Date.now());
+    setOtpClock(Date.now());
+    setOtpCode("");
+    return true;
+  };
+
   const update = (key, value) => {
     if (key === "phone") {
       setOtpSent(false);
+      setOtpSentAt(0);
       setOtpCode("");
       setVerifiedToken("");
       setOtpError("");
@@ -1953,10 +2066,10 @@ function Checkout({
           try {
             try {
               const existingProfile = JSON.parse(
-                localStorage.getItem("hanaa-client-profile") || "{}",
+                localStorage.getItem(CLIENT_PROFILE_KEY) || "{}",
               );
               localStorage.setItem(
-                "hanaa-client-profile",
+                CLIENT_PROFILE_KEY,
                 JSON.stringify({
                   ...existingProfile,
                   name: data.name.trim(),
@@ -1965,7 +2078,7 @@ function Checkout({
               );
             } catch {
               localStorage.setItem(
-                "hanaa-client-profile",
+                CLIENT_PROFILE_KEY,
                 JSON.stringify({
                   name: data.name.trim(),
                   phone: data.phone.trim(),
@@ -1973,25 +2086,8 @@ function Checkout({
               );
             }
 
-            if (!otpSent) {
-              const response = await fetch("/api/otp-send", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ phone: data.phone }),
-              });
-              const payload = await response.json().catch(() => ({}));
-
-              if (!response.ok || payload?.ok === false) {
-                setOtpError(
-                  payload?.code === "OTP_RATE_LIMITED"
-                    ? "Tjarrab code bzzaf. Tsena chwya w 3awed."
-                    : "Ma 9drnach nsifto SMS daba. 3awed jarrab.",
-                );
-                return;
-              }
-
-              setOtpSent(true);
-              setOtpCode("");
+            if (!otpSent && !verifiedToken) {
+              await requestOtp();
               return;
             }
 
@@ -2012,16 +2108,36 @@ function Checkout({
               const payload = await response.json().catch(() => ({}));
 
               if (!response.ok || payload?.ok !== true || !payload?.token) {
-                setOtpError(
-                  payload?.code === "OTP_RATE_LIMITED"
-                    ? "Tjarrab code bzzaf. Tsena chwya w 3awed."
-                    : "Code SMS ghalat wla sala. 3awed dkhel code s7i7.",
-                );
+                if (
+                  payload?.code === "OTP_EXPIRED" ||
+                  payload?.code === "OTP_NOT_SENT"
+                ) {
+                  setOtpError(
+                    "Code sala. Code صالح ghir 1 d9i9a. T9dar tsift code jdid mn b3d 5 d9aye9 mn l'envoi.",
+                  );
+                } else if (payload?.code === "OTP_RATE_LIMITED") {
+                  setOtpError("Tjarrab code bzzaf. Tsena chwya w 3awed.");
+                } else {
+                  setOtpError("Code SMS ghalat. 3awed dkhel code s7i7.");
+                }
                 return;
               }
 
-              token = String(payload.token);
+              token = String(payload.trustedToken || payload.token);
               setVerifiedToken(token);
+
+              if (payload?.trustedToken && payload?.trustedExpiresAt) {
+                try {
+                  localStorage.setItem(
+                    CLIENT_TRUST_KEY,
+                    JSON.stringify({
+                      phone: payload.phone || data.phone,
+                      token: String(payload.trustedToken),
+                      expiresAt: Number(payload.trustedExpiresAt),
+                    }),
+                  );
+                } catch {}
+              }
             }
 
             await onPlace(
@@ -2033,7 +2149,23 @@ function Checkout({
             );
           } catch (error) {
             console.error("Checkout OTP failed:", error);
-            setOtpError("Wa9e3 mochkil. 3awed jarrab.");
+            if (
+              error?.code === "PHONE_TOKEN_INVALID" ||
+              error?.message === "PHONE_TOKEN_INVALID" ||
+              error?.code === "PHONE_VERIFICATION_REQUIRED" ||
+              error?.message === "PHONE_VERIFICATION_REQUIRED"
+            ) {
+              try {
+                localStorage.removeItem(CLIENT_TRUST_KEY);
+              } catch {}
+              setVerifiedToken("");
+              setOtpSent(false);
+              setOtpSentAt(0);
+              setOtpCode("");
+              setOtpError("Lverification salat. Talab code SMS jdid.");
+            } else {
+              setOtpError("Wa9e3 mochkil. 3awed jarrab.");
+            }
           } finally {
             setSubmitting(false);
           }
@@ -2135,7 +2267,7 @@ function Checkout({
           />{" "}
           Paiement en ligne <span>Bientôt disponible</span>
         </label>
-        {otpSent && (
+        {otpSent && !verifiedToken && (
           <div
             style={{
               marginTop: 14,
@@ -2160,8 +2292,30 @@ function Checkout({
               />
             </label>
             <small style={{ display: "block", marginTop: 8 }}>
-              Code tsift l numéro {data.phone}.
+              Code tsift l numéro {data.phone}.{" "}
+              {codeExpiresIn > 0
+                ? `Kayb9a صالح ${codeExpiresIn}s.`
+                : "Code sala."}
             </small>
+            <button
+              type="button"
+              onClick={requestOtp}
+              disabled={submitting || resendIn > 0}
+              style={{
+                marginTop: 10,
+                border: 0,
+                background: "transparent",
+                color: resendIn > 0 ? "#888" : "#D71920",
+                fontWeight: 800,
+                cursor: resendIn > 0 ? "not-allowed" : "pointer",
+              }}
+            >
+              {resendIn > 0
+                ? `Renvoyer le code dans ${Math.floor(resendIn / 60)}:${String(
+                    resendIn % 60,
+                  ).padStart(2, "0")}`
+                : "Renvoyer un nouveau code"}
+            </button>
           </div>
         )}
         {otpError && (
@@ -2178,16 +2332,18 @@ function Checkout({
         )}
         <button
           className="primary-action full"
-          disabled={!valid || submitting}
+          disabled={!valid || submitting || codeExpired}
           aria-busy={submitting ? "true" : "false"}
         >
           {submitting
             ? "Chargement..."
             : verifiedToken
               ? "Confirmer la commande"
-              : otpSent
-                ? "Valider le code et confirmer"
-                : "Recevoir le code SMS"}{" "}
+              : codeExpired
+                ? "Code expiré — attends pour renvoyer"
+                : otpSent
+                  ? "Valider le code et confirmer"
+                  : "Recevoir le code SMS"}{" "}
           <span>{submitting ? "…" : otpSent || verifiedToken ? "✓" : "→"}</span>
         </button>
       </form>
@@ -2486,7 +2642,7 @@ function ClientProfile({ onHome }) {
   const [form, setForm] = useState(() => {
     try {
       const saved = JSON.parse(
-        localStorage.getItem("hanaa-client-profile") || "{}",
+        localStorage.getItem(CLIENT_PROFILE_KEY) || "{}",
       );
       return { name: saved.name || "", phone: saved.phone || "" };
     } catch {
@@ -2499,7 +2655,7 @@ function ClientProfile({ onHome }) {
     event.preventDefault();
     if (!form.name.trim() || !phoneIsValid(form.phone)) return;
     const clean = { name: form.name.trim(), phone: form.phone.trim() };
-    localStorage.setItem("hanaa-client-profile", JSON.stringify(clean));
+    localStorage.setItem(CLIENT_PROFILE_KEY, JSON.stringify(clean));
     setForm(clean);
     setMessage("✅ Profil enregistré");
   };
