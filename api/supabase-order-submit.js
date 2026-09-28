@@ -1,4 +1,5 @@
 import {
+  issuePhoneVerificationToken,
   normalizeMoroccanPhoneE164,
   verifyPhoneVerificationToken,
   verifyTrustedPhoneToken,
@@ -109,16 +110,24 @@ export default async function handler(req, res) {
     return send(res, 400, { ok: false, code: "INVALID_ORDER" });
   }
 
-  const verified =
-    verifyPhoneVerificationToken(phoneVerificationToken, phone) ||
+  const shortVerification = verifyPhoneVerificationToken(
+    phoneVerificationToken,
+    phone,
+  );
+  const trustedVerification =
+    shortVerification ||
     verifyTrustedPhoneToken(phoneVerificationToken, phone);
 
-  if (!verified) {
+  if (!trustedVerification) {
     return send(res, 403, { ok: false, code: "PHONE_TOKEN_INVALID" });
   }
 
+  const orderVerificationToken = shortVerification
+    ? phoneVerificationToken
+    : issuePhoneVerificationToken(phone).token;
+
   try {
-    const payload = await submitToSupabase(row, phoneVerificationToken);
+    const payload = await submitToSupabase(row, orderVerificationToken);
 
     const trackingToken = issueCustomerTrackingToken(
       payload.row.id,
