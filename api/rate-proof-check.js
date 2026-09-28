@@ -52,6 +52,8 @@ export default function handler(req, res) {
     "send_ip",
     "send_phone_day",
     "send_ip_day",
+    "send_global_hour",
+    "send_global_day",
     "check_phone",
     "check_ip",
   ].includes(kind)) {
