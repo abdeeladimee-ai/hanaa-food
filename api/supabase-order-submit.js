@@ -1,6 +1,7 @@
 import {
   normalizeMoroccanPhoneE164,
   verifyPhoneVerificationToken,
+  verifyTrustedPhoneToken,
 } from "../lib/phoneVerification.js";
 import { issueCustomerTrackingToken } from "../lib/customerTracking.js";
 
@@ -108,10 +109,9 @@ export default async function handler(req, res) {
     return send(res, 400, { ok: false, code: "INVALID_ORDER" });
   }
 
-  const verified = verifyPhoneVerificationToken(
-    phoneVerificationToken,
-    phone,
-  );
+  const verified =
+    verifyPhoneVerificationToken(phoneVerificationToken, phone) ||
+    verifyTrustedPhoneToken(phoneVerificationToken, phone);
 
   if (!verified) {
     return send(res, 403, { ok: false, code: "PHONE_TOKEN_INVALID" });
