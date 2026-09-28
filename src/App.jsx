@@ -1022,7 +1022,7 @@ function App() {
         )
         .filter((item) => item.quantity > 0),
     );
-  const place = async (details, otpCode) => {
+  const place = async (details, phoneVerificationToken) => {
     const unavailableItems = cart.filter((cartItem) => {
       const product = products.find((item) => item.id === cartItem.productId);
       return isProductRuptureAtBranch(product, branch);
@@ -1058,7 +1058,7 @@ function App() {
       createdAt: new Date().toISOString(),
     };
     try {
-      const savedOrder = await createOrder(next, { otpCode });
+      const savedOrder = await createOrder(next, { phoneVerificationToken });
       setOrder(savedOrder);
 
       if (savedOrder?.pendingSync) {
@@ -1896,6 +1896,7 @@ function Checkout({
   const [submitting, setSubmitting] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState("");
+  const [verifiedToken, setVerifiedToken] = useState("");
   const [otpError, setOtpError] = useState("");
   const [data, setData] = useState(() => {
     let profile = {};
@@ -1918,6 +1919,7 @@ function Checkout({
     if (key === "phone") {
       setOtpSent(false);
       setOtpCode("");
+      setVerifiedToken("");
       setOtpError("");
     }
     setData((current) => ({ ...current, [key]: value }));
@@ -1993,10 +1995,33 @@ function Checkout({
               return;
             }
 
-            const cleanCode = String(otpCode || "").replace(/\D/g, "");
-            if (!/^\d{4,10}$/.test(cleanCode)) {
-              setOtpError("Dkhel code SMS li wslk.");
-              return;
+            let token = verifiedToken;
+
+            if (!token) {
+              const cleanCode = String(otpCode || "").replace(/\D/g, "");
+              if (!/^\d{4,10}$/.test(cleanCode)) {
+                setOtpError("Dkhel code SMS li wslk.");
+                return;
+              }
+
+              const response = await fetch("/api/otp-check", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ phone: data.phone, code: cleanCode }),
+              });
+              const payload = await response.json().catch(() => ({}));
+
+              if (!response.ok || payload?.ok !== true || !payload?.token) {
+                setOtpError(
+                  payload?.code === "OTP_RATE_LIMITED"
+                    ? "Tjarrab code bzzaf. Tsena chwya w 3awed."
+                    : "Code SMS ghalat wla sala. 3awed dkhel code s7i7.",
+                );
+                return;
+              }
+
+              token = String(payload.token);
+              setVerifiedToken(token);
             }
 
             await onPlace(
@@ -2004,7 +2029,7 @@ function Checkout({
                 ...data,
                 address: mode === "pickup" ? "" : data.address,
               },
-              cleanCode,
+              token,
             );
           } catch (error) {
             console.error("Checkout OTP failed:", error);
@@ -2158,10 +2183,12 @@ function Checkout({
         >
           {submitting
             ? "Chargement..."
-            : otpSent
-              ? "Valider le code et confirmer"
-              : "Recevoir le code SMS"}{" "}
-          <span>{submitting ? "…" : otpSent ? "✓" : "→"}</span>
+            : verifiedToken
+              ? "Confirmer la commande"
+              : otpSent
+                ? "Valider le code et confirmer"
+                : "Recevoir le code SMS"}{" "}
+          <span>{submitting ? "…" : otpSent || verifiedToken ? "✓" : "→"}</span>
         </button>
       </form>
     </main>
