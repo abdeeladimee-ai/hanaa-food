@@ -1,50 +1,93 @@
-import { issuePhoneVerificationToken, normalizeMoroccanPhoneE164 } from "../lib/phoneVerification.js";
+import crypto from "node:crypto";
+import {
+  issuePhoneVerificationToken,
+  normalizeMoroccanPhoneE164,
+} from "../lib/phoneVerification.js";
 
-const WINDOW_MS = 10 * 60 * 1000;
-const MAX_CHECKS_PER_PHONE = 8;
+const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
+const SUPABASE_ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdya2V6eGhzd2ZvY3FsdnVqemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NTE1MjIsImV4cCI6MjEwNjAyNzUyMn0.IoIO9FJ_F612fv3a9iiotWv871S8E7Gs3Y02DSSHfHs";
 
-function limiter() {
-  if (!globalThis.__hanaaOtpCheckLimits) globalThis.__hanaaOtpCheckLimits = new Map();
-  return globalThis.__hanaaOtpCheckLimits;
+function clientIp(req) {
+  return (
+    String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+    String(req.headers["x-real-ip"] || "").trim() ||
+    "unknown"
+  );
 }
 
-function limited(key, max) {
-  const now = Date.now();
-  const map = limiter();
-  const current = map.get(key);
-  if (!current || now - current.startedAt >= WINDOW_MS) {
-    map.set(key, { startedAt: now, count: 1 });
-    return false;
-  }
-  current.count += 1;
-  return current.count > max;
+function opaqueRateKey(kind, value, authToken) {
+  const key = crypto
+    .createHash("sha256")
+    .update(`hanaa-rate-key-v1|${authToken}`)
+    .digest();
+  return crypto
+    .createHmac("sha256", key)
+    .update(`${kind}|${String(value || "")}`)
+    .digest("hex");
+}
+
+async function consumeLimit(kind, key) {
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/rpc/consume_otp_rate_limit`,
+    {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_JWT,
+        Authorization: `Bearer ${SUPABASE_ANON_JWT}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_kind: kind, p_key: key }),
+      signal: AbortSignal.timeout(5000),
+    },
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error("OTP_RATE_LIMIT_UNAVAILABLE");
+  return payload;
 }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
+
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, code: "METHOD_NOT_ALLOWED" });
   }
 
   const phone = normalizeMoroccanPhoneE164(req.body?.phone);
-  const code = String(req.body?.code || "").replace(/\D/g, "").slice(0, 10);
+  const code = String(req.body?.code || "")
+    .replace(/\D/g, "")
+    .slice(0, 10);
+
   if (!phone || !/^\d{4,10}$/.test(code)) {
     return res.status(400).json({ ok: false, code: "OTP_INVALID" });
-  }
-
-  const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
-    String(req.headers["x-real-ip"] || "").trim() || "unknown";
-
-  if (limited(`phone:${phone}`, MAX_CHECKS_PER_PHONE) || limited(`ip:${ip}`, 200)) {
-    res.setHeader("Retry-After", "600");
-    return res.status(429).json({ ok: false, code: "OTP_RATE_LIMITED" });
   }
 
   const sid = String(process.env.TWILIO_ACCOUNT_SID || "").trim();
   const authToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();
   const service = String(process.env.TWILIO_VERIFY_SERVICE_SID || "").trim();
+
   if (!sid || !authToken || !service) {
     return res.status(503).json({ ok: false, code: "OTP_NOT_CONFIGURED" });
+  }
+
+  try {
+    const checks = await Promise.all([
+      consumeLimit("check_phone", opaqueRateKey("phone", phone, authToken)),
+      consumeLimit("check_ip", opaqueRateKey("ip", clientIp(req), authToken)),
+    ]);
+
+    const denied = checks.find((item) => item?.ok === false);
+    if (denied) {
+      const retryAfter = Math.max(1, Number(denied.retry_after || 600));
+      res.setHeader("Retry-After", String(retryAfter));
+      return res
+        .status(429)
+        .json({ ok: false, code: "OTP_RATE_LIMITED", retryAfter });
+    }
+  } catch (error) {
+    console.error("OTP check limiter unavailable", { message: error?.message });
+    return res
+      .status(503)
+      .json({ ok: false, code: "OTP_RATE_LIMIT_UNAVAILABLE" });
   }
 
   const auth = Buffer.from(`${sid}:${authToken}`).toString("base64");
@@ -65,6 +108,12 @@ export default async function handler(req, res) {
     );
 
     const data = await response.json().catch(() => ({}));
+
+    if (response.status === 429) {
+      res.setHeader("Retry-After", "600");
+      return res.status(429).json({ ok: false, code: "OTP_RATE_LIMITED" });
+    }
+
     if (!response.ok || data.status !== "approved") {
       return res.status(400).json({ ok: false, code: "OTP_INVALID" });
     }
@@ -77,7 +126,13 @@ export default async function handler(req, res) {
       token: verification.token,
       expiresAt: verification.expiresAt,
     });
-  } catch {
-    return res.status(502).json({ ok: false, code: "OTP_PROVIDER_UNAVAILABLE" });
+  } catch (error) {
+    console.error("Twilio OTP check unavailable", {
+      name: error?.name,
+      message: error?.message,
+    });
+    return res
+      .status(502)
+      .json({ ok: false, code: "OTP_PROVIDER_UNAVAILABLE" });
   }
 }
