@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
     String(req.headers["x-real-ip"] || "").trim() || "unknown";
 
-  if (limited(`phone:${phone}`, MAX_CHECKS_PER_PHONE) || limited(`ip:${ip}`, 30)) {
+  if (limited(`phone:${phone}`, MAX_CHECKS_PER_PHONE) || limited(`ip:${ip}`, 200)) {
     res.setHeader("Retry-After", "600");
     return res.status(429).json({ ok: false, code: "OTP_RATE_LIMITED" });
   }
