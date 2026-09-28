@@ -1317,7 +1317,7 @@ function App() {
           onTrack={(selectedOrder) => {
             setOrder(selectedOrder);
             localStorage.setItem(
-              "hanaa-order",
+              "hanaa-order-v2",
               JSON.stringify(selectedOrder),
             );
             setView("tracking");
