@@ -16,7 +16,7 @@ const routeViews = { "/login": "login", "/admin": "admin-dashboard", "/admin/com
 
 const CLIENT_PROFILE_KEY = "hanaa-client-profile-v2";
 const CLIENT_TRUST_KEY = "hanaa-client-trust-v2";
-const CLIENT_RESET_KEY = "hanaa-client-reset-20260928-v2";
+const CLIENT_RESET_KEY = "hanaa-client-reset-20260928-v3";
 const clientPhoneKey = (value = "") =>
   String(value || "").replace(/\D/g, "").slice(-9);
 
@@ -24,15 +24,23 @@ if (typeof window !== "undefined") {
   try {
     if (localStorage.getItem(CLIENT_RESET_KEY) !== "1") {
       [
+        "hanaa-client-profile",
         CLIENT_PROFILE_KEY,
         "hanaa-client-trust-v1",
+        CLIENT_TRUST_KEY,
         "hanaa-client-order-ids",
+        "hanaa-client-order-ids-v2",
         "hanaa-client-order-ids-by-phone",
+        "hanaa-client-order-ids-by-phone-v2",
         "hanaa-order",
+        "hanaa-order-v2",
         "hanaa-order-tracking-tokens-v1",
+        "hanaa-order-tracking-tokens-v2",
         "hanaa-pending-order-writes-v2",
+        "hanaa-pending-order-writes-v3",
       ].forEach((key) => localStorage.removeItem(key));
       sessionStorage.removeItem("hanaa-profile-required-order");
+      sessionStorage.removeItem("hanaa-profile-required-order-v2");
       localStorage.setItem(CLIENT_RESET_KEY, "1");
     }
   } catch {}
@@ -2654,7 +2662,25 @@ function ClientProfile({ onHome }) {
   const save = (event) => {
     event.preventDefault();
     if (!form.name.trim() || !phoneIsValid(form.phone)) return;
+
+    let previousPhone = "";
+    try {
+      previousPhone = JSON.parse(
+        localStorage.getItem(CLIENT_PROFILE_KEY) || "{}",
+      )?.phone || "";
+    } catch {}
+
     const clean = { name: form.name.trim(), phone: form.phone.trim() };
+
+    if (
+      previousPhone &&
+      clientPhoneKey(previousPhone) !== clientPhoneKey(clean.phone)
+    ) {
+      try {
+        localStorage.removeItem(CLIENT_TRUST_KEY);
+      } catch {}
+    }
+
     localStorage.setItem(CLIENT_PROFILE_KEY, JSON.stringify(clean));
     setForm(clean);
     setMessage("✅ Profil enregistré");
