@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import { issueStaffToken, verifiedStaffFromRequest } from "../lib/staffAuth.js";
-import { ensureSchema, getPool } from "../lib/neonDb.js";
+
+const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
+const SUPABASE_KEY = "sb_publishable_P_ADKKjVA91hIFkgFN4H6Q_OH1rxmSX";
 
 const coreAccounts = [
   { id: "admin-dev", email: "admin@hanaa-food.test", name: "Admin", role: "ADMIN", branchId: null, branchName: null },
@@ -47,6 +49,38 @@ function expectedPassword(accountId) {
   return `${labels[accountId] || "Hanaa"}#${pin}`;
 }
 
+function proofSecret() {
+  const authToken = String(process.env.TWILIO_AUTH_TOKEN || "");
+  if (!authToken) return null;
+  return crypto
+    .createHash("sha256")
+    .update(`hanaa-supabase-order-v1|${authToken}`)
+    .digest();
+}
+
+function sign(value) {
+  const key = proofSecret();
+  if (!key) return "";
+  return crypto.createHmac("sha256", key).update(value).digest("hex");
+}
+
+function signedHeaders(action) {
+  if (!proofSecret()) {
+    const error = new Error("STAFF_STORE_PROOF_NOT_CONFIGURED");
+    error.status = 503;
+    throw error;
+  }
+  const timestamp = Date.now();
+  return {
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${SUPABASE_KEY}`,
+    "Content-Type": "application/json",
+    "X-Hanaa-Staff-Action": action,
+    "X-Hanaa-Staff-Timestamp": String(timestamp),
+    "X-Hanaa-Staff-Proof": sign(`staff-store|${action}|${timestamp}`),
+  };
+}
+
 function safeEqual(left, right) {
   const a = Buffer.from(String(left || ""));
   const b = Buffer.from(String(right || ""));
@@ -74,14 +108,22 @@ function publicAccount(row) {
   };
 }
 
-function passwordMatches(password, saltHex, hashHex) {
+function passwordHash(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(String(password || ""), salt, 64).toString("hex");
+  return `scrypt$${salt.toString("hex")}$${hash}`;
+}
+
+function passwordMatches(password, encoded) {
   try {
+    const [kind, saltHex, hashHex] = String(encoded || "").split("$");
+    if (kind !== "scrypt" || !saltHex || !hashHex) return false;
     const actual = crypto.scryptSync(
       String(password || ""),
-      Buffer.from(String(saltHex || ""), "hex"),
+      Buffer.from(saltHex, "hex"),
       64,
     );
-    const expected = Buffer.from(String(hashHex || ""), "hex");
+    const expected = Buffer.from(hashHex, "hex");
     return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
   } catch {
     return false;
@@ -97,42 +139,112 @@ function requireAdmin(req, res) {
   return staff;
 }
 
+async function staffRows() {
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/staff_accounts?select=id,email,phone,name,password_hash,role,branch_id,branch_name,active,created_at,updated_at&order=role.asc,name.asc`,
+    {
+      headers: signedHeaders("read"),
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    },
+  );
+  const payload = await response.json().catch(() => []);
+  if (!response.ok) {
+    const error = new Error(String(payload?.message || payload?.code || "STAFF_STORE_READ_FAILED"));
+    error.status = response.status;
+    throw error;
+  }
+  return Array.isArray(payload) ? payload : [];
+}
+
+async function saveStaffRow(row) {
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/staff_accounts?on_conflict=id`,
+    {
+      method: "POST",
+      headers: {
+        ...signedHeaders("write"),
+        Prefer: "resolution=merge-duplicates,return=representation",
+      },
+      body: JSON.stringify(row),
+      signal: AbortSignal.timeout(10000),
+    },
+  );
+  const payload = await response.json().catch(() => []);
+  if (!response.ok) {
+    const error = new Error(String(payload?.message || payload?.code || "STAFF_STORE_WRITE_FAILED"));
+    error.status = response.status;
+    throw error;
+  }
+  return Array.isArray(payload) ? payload[0] : null;
+}
+
+async function patchStaffRow(id, patch) {
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/staff_accounts?id=eq.${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: {
+        ...signedHeaders("write"),
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(patch),
+      signal: AbortSignal.timeout(10000),
+    },
+  );
+  const payload = await response.json().catch(() => []);
+  if (!response.ok) {
+    const error = new Error(String(payload?.message || payload?.code || "STAFF_STORE_WRITE_FAILED"));
+    error.status = response.status;
+    throw error;
+  }
+  return Array.isArray(payload) ? payload[0] : null;
+}
+
+async function removeStaffRow(id) {
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/staff_accounts?id=eq.${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: {
+        ...signedHeaders("delete"),
+        Prefer: "return=representation",
+      },
+      signal: AbortSignal.timeout(10000),
+    },
+  );
+  const payload = await response.json().catch(() => []);
+  if (!response.ok) {
+    const error = new Error(String(payload?.message || payload?.code || "STAFF_STORE_DELETE_FAILED"));
+    error.status = response.status;
+    throw error;
+  }
+  return Array.isArray(payload) ? payload : [];
+}
+
 async function dynamicLogin(identifier, password) {
   const raw = String(identifier || "").trim();
   const phone = normalizePhone(raw);
+  const rows = await staffRows();
+  const row = rows
+    .filter((item) => item?.active !== false)
+    .find((item) =>
+      (phone && String(item?.phone || "") === phone) ||
+      String(item?.name || "").toLowerCase() === raw.toLowerCase()
+    );
 
-  const result = await getPool().query(
-    `select *
-       from public.staff_accounts
-      where active = true
-        and (
-          ($1 <> '' and phone = $1)
-          or lower(name) = lower($2)
-        )
-      order by updated_at desc
-      limit 1`,
-    [phone, raw],
-  );
-
-  const row = result.rows[0];
-  if (!row || !passwordMatches(password, row.password_salt, row.password_hash)) return null;
+  if (!row || !passwordMatches(password, row.password_hash)) return null;
   return publicAccount(row);
 }
 
 async function listAccounts(req, res) {
   if (!requireAdmin(req, res)) return;
-
-  const dynamic = await getPool().query(
-    `select id,phone,name,role,branch_id,branch_name,active
-       from public.staff_accounts
-      order by role,name`,
-  );
-
+  const dynamic = await staffRows();
   return res.status(200).json({
     ok: true,
     accounts: [
       ...coreAccounts.map((item) => ({ ...item, active: true })),
-      ...dynamic.rows.map(publicAccount),
+      ...dynamic.map(publicAccount),
     ],
   });
 }
@@ -158,64 +270,57 @@ async function upsertAccount(req, res, body) {
     return res.status(400).json({ ok: false, code: "INVALID_STAFF_ACCOUNT" });
   }
 
-  const existing = await getPool().query(
-    "select id from public.staff_accounts where phone=$1 limit 1",
-    [phone],
-  );
-  const id = existing.rows[0]?.id || `staff-${crypto.randomUUID()}`;
-  const salt = crypto.randomBytes(16);
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  const rows = await staffRows();
+  const existing = rows.find((item) => String(item?.phone || "") === phone);
+  const id = existing?.id || `staff-${crypto.randomUUID()}`;
 
-  const saved = await getPool().query(
-    `insert into public.staff_accounts
-      (id,phone,name,password_salt,password_hash,role,branch_id,branch_name,active,updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,true,now())
-     on conflict (id) do update set
-       phone=excluded.phone,
-       name=excluded.name,
-       password_salt=excluded.password_salt,
-       password_hash=excluded.password_hash,
-       role=excluded.role,
-       branch_id=excluded.branch_id,
-       branch_name=excluded.branch_name,
-       active=true,
-       updated_at=now()
-     returning *`,
-    [id, phone, name, salt.toString("hex"), hash, role, branchId, branchName],
-  );
+  const saved = await saveStaffRow({
+    id,
+    email: existing?.email || null,
+    phone,
+    name,
+    password_hash: passwordHash(password),
+    role,
+    branch_id: branchId,
+    branch_name: branchName,
+    active: true,
+    updated_at: new Date().toISOString(),
+  });
 
-  return res.status(200).json({ ok: true, account: publicAccount(saved.rows[0]) });
+  if (!saved) {
+    return res.status(500).json({ ok: false, code: "STAFF_STORE_WRITE_FAILED" });
+  }
+
+  return res.status(200).json({ ok: true, account: publicAccount(saved) });
 }
 
 async function toggleAccount(req, res, body) {
   if (!requireAdmin(req, res)) return;
   const id = String(body.id || "").trim();
+  const rows = await staffRows();
+  const current = rows.find((item) => String(item?.id || "") === id);
 
-  const result = await getPool().query(
-    `update public.staff_accounts
-        set active=not active, updated_at=now()
-      where id=$1
-      returning id,phone,name,role,branch_id,branch_name,active`,
-    [id],
-  );
-
-  if (!result.rows[0]) {
+  if (!current) {
     return res.status(404).json({ ok: false, code: "ACCOUNT_NOT_FOUND" });
   }
 
-  return res.status(200).json({ ok: true, account: publicAccount(result.rows[0]) });
+  const saved = await patchStaffRow(id, {
+    active: current.active === false,
+    updated_at: new Date().toISOString(),
+  });
+
+  if (!saved) {
+    return res.status(404).json({ ok: false, code: "ACCOUNT_NOT_FOUND" });
+  }
+
+  return res.status(200).json({ ok: true, account: publicAccount(saved) });
 }
 
 async function deleteAccount(req, res, body) {
   if (!requireAdmin(req, res)) return;
   const id = String(body.id || "").trim();
-
-  const result = await getPool().query(
-    "delete from public.staff_accounts where id=$1 returning id",
-    [id],
-  );
-
-  return res.status(200).json({ ok: true, deleted: Boolean(result.rowCount) });
+  const deleted = await removeStaffRow(id);
+  return res.status(200).json({ ok: true, deleted: deleted.length > 0 });
 }
 
 export default async function handler(req, res) {
@@ -240,7 +345,6 @@ export default async function handler(req, res) {
         });
       }
 
-      await ensureSchema();
       const dynamic = await dynamicLogin(body.identifier, body.password);
       if (!dynamic) {
         return res.status(401).json({ ok: false, code: "INVALID_STAFF_CREDENTIALS" });
@@ -253,7 +357,6 @@ export default async function handler(req, res) {
       });
     }
 
-    await ensureSchema();
     if (action === "list") return listAccounts(req, res);
     if (action === "upsert") return upsertAccount(req, res, body);
     if (action === "toggle") return toggleAccount(req, res, body);
@@ -262,6 +365,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ ok: false, code: "UNKNOWN_ACTION" });
   } catch (error) {
     console.error("staff auth failed", error);
-    return res.status(500).json({ ok: false, code: error?.code || "STAFF_AUTH_FAILED" });
+    return res.status(Number(error?.status || 500)).json({
+      ok: false,
+      code: String(error?.message || "STAFF_AUTH_FAILED"),
+    });
   }
 }
