@@ -2,10 +2,10 @@ import { requireSupabase } from "./supabase";
 
 const TABLE = "orders";
 const STAFF_SESSION_KEY = "hanaa-auth-session";
-const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids";
-const LEGACY_CLIENT_ORDER_KEY = "hanaa-order";
-const PENDING_ORDER_QUEUE_KEY = "hanaa-pending-order-writes-v2";
-const TRACKING_TOKENS_KEY = "hanaa-order-tracking-tokens-v1";
+const CLIENT_ORDER_IDS_KEY = "hanaa-client-order-ids-v2";
+const LEGACY_CLIENT_ORDER_KEY = "hanaa-order-v2";
+const PENDING_ORDER_QUEUE_KEY = "hanaa-pending-order-writes-v3";
+const TRACKING_TOKENS_KEY = "hanaa-order-tracking-tokens-v2";
 const TIMEOUT_MS = 12000;
 const RETRYABLE = new Set([408,425,429,500,502,503,504]);
 let createInFlight = null;
