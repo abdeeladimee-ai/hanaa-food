@@ -1,11 +1,13 @@
 import crypto from "node:crypto";
 import {
   issuePhoneVerificationToken,
+  issueTrustedPhoneToken,
   normalizeMoroccanPhoneE164,
 } from "../lib/phoneVerification.js";
 
 const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
-const SUPABASE_ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdya2V6eGhzd2ZvY3FsdnVqemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NTE1MjIsImV4cCI6MjEwNjAyNzUyMn0.IoIO9FJ_F612fv3a9iiotWv871S8E7Gs3Y02DSSHfHs";
+const SUPABASE_ANON_JWT =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdya2V6eGhzd2ZvY3FsdnVqemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NTE1MjIsImV4cCI6MjEwNjAyNzUyMn0.IoIO9FJ_F612fv3a9iiotWv871S8E7Gs3Y02DSSHfHs";
 
 function clientIp(req) {
   return (
@@ -26,9 +28,9 @@ function opaqueRateKey(kind, value, authToken) {
     .digest("hex");
 }
 
-async function consumeLimit(kind, key) {
+async function rpc(name, body) {
   const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/rpc/consume_otp_rate_limit`,
+    `${SUPABASE_URL}/rest/v1/rpc/${name}`,
     {
       method: "POST",
       headers: {
@@ -36,13 +38,24 @@ async function consumeLimit(kind, key) {
         Authorization: `Bearer ${SUPABASE_ANON_JWT}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ p_kind: kind, p_key: key }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
     },
   );
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error("OTP_RATE_LIMIT_UNAVAILABLE");
   return payload;
+}
+
+async function consumeLimit(kind, key) {
+  return rpc("consume_otp_rate_limit", {
+    p_kind: kind,
+    p_key: key,
+  });
+}
+
+async function checkFresh(key) {
+  return rpc("check_otp_fresh", { p_key: key });
 }
 
 export default async function handler(req, res) {
@@ -69,25 +82,50 @@ export default async function handler(req, res) {
     return res.status(503).json({ ok: false, code: "OTP_NOT_CONFIGURED" });
   }
 
+  const phoneKey = opaqueRateKey("phone", phone, authToken);
+
   try {
+    const fresh = await checkFresh(phoneKey);
+    if (fresh?.ok !== true) {
+      return res.status(400).json({
+        ok: false,
+        code:
+          fresh?.code === "OTP_NOT_SENT"
+            ? "OTP_NOT_SENT"
+            : "OTP_EXPIRED",
+        resendAfter: 300,
+      });
+    }
+
     const checks = await Promise.all([
-      consumeLimit("check_phone", opaqueRateKey("phone", phone, authToken)),
-      consumeLimit("check_ip", opaqueRateKey("ip", clientIp(req), authToken)),
+      consumeLimit("check_phone", phoneKey),
+      consumeLimit(
+        "check_ip",
+        opaqueRateKey("ip", clientIp(req), authToken),
+      ),
     ]);
 
     const denied = checks.find((item) => item?.ok === false);
     if (denied) {
-      const retryAfter = Math.max(1, Number(denied.retry_after || 600));
+      const retryAfter = Math.max(
+        1,
+        Number(denied.retry_after || 600),
+      );
       res.setHeader("Retry-After", String(retryAfter));
-      return res
-        .status(429)
-        .json({ ok: false, code: "OTP_RATE_LIMITED", retryAfter });
+      return res.status(429).json({
+        ok: false,
+        code: "OTP_RATE_LIMITED",
+        retryAfter,
+      });
     }
   } catch (error) {
-    console.error("OTP check limiter unavailable", { message: error?.message });
-    return res
-      .status(503)
-      .json({ ok: false, code: "OTP_RATE_LIMIT_UNAVAILABLE" });
+    console.error("OTP check limiter unavailable", {
+      message: error?.message,
+    });
+    return res.status(503).json({
+      ok: false,
+      code: "OTP_RATE_LIMIT_UNAVAILABLE",
+    });
   }
 
   const auth = Buffer.from(`${sid}:${authToken}`).toString("base64");
@@ -111,28 +149,39 @@ export default async function handler(req, res) {
 
     if (response.status === 429) {
       res.setHeader("Retry-After", "600");
-      return res.status(429).json({ ok: false, code: "OTP_RATE_LIMITED" });
+      return res.status(429).json({
+        ok: false,
+        code: "OTP_RATE_LIMITED",
+      });
     }
 
     if (!response.ok || data.status !== "approved") {
-      return res.status(400).json({ ok: false, code: "OTP_INVALID" });
+      return res.status(400).json({
+        ok: false,
+        code: "OTP_INVALID",
+      });
     }
 
     const verification = issuePhoneVerificationToken(phone);
+    const trusted = issueTrustedPhoneToken(phone);
+
     return res.status(200).json({
       ok: true,
       status: "approved",
       phone,
       token: verification.token,
       expiresAt: verification.expiresAt,
+      trustedToken: trusted.token,
+      trustedExpiresAt: trusted.expiresAt,
     });
   } catch (error) {
     console.error("Twilio OTP check unavailable", {
       name: error?.name,
       message: error?.message,
     });
-    return res
-      .status(502)
-      .json({ ok: false, code: "OTP_PROVIDER_UNAVAILABLE" });
+    return res.status(502).json({
+      ok: false,
+      code: "OTP_PROVIDER_UNAVAILABLE",
+    });
   }
 }
