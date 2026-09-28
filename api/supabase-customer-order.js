@@ -5,7 +5,7 @@ const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
 const SUPABASE_KEY = "sb_publishable_P_ADKKjVA91hIFkgFN4H6Q_OH1rxmSX";
 
 function proofSecret() {
-  const authToken = String(process.env.TWILIO_AUTH_TOKEN || "");
+  const authToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();
   if (!authToken) return null;
   return crypto
     .createHash("sha256")
