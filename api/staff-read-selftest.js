@@ -3,63 +3,74 @@ import crypto from "node:crypto";
 const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
 const SUPABASE_KEY = "sb_publishable_P_ADKKjVA91hIFkgFN4H6Q_OH1rxmSX";
 
-function proofSecret() {
+function secretKey() {
   const authToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();
   if (!authToken) return null;
   return crypto
     .createHash("sha256")
-    .update(`hanaa-supabase-order-v1|${authToken}`)
+    .update(`hanaa-staff-edge-v1|${authToken}`)
     .digest();
 }
 
-function sign(value) {
-  const key = proofSecret();
-  if (!key) return "";
-  return crypto.createHmac("sha256", key).update(value).digest("hex");
+function canonical(body) {
+  return [
+    String(body.action || ""),
+    String(body.role || "").toUpperCase(),
+    String(body.staffId || ""),
+    String(body.branchId || ""),
+    String(body.requestedBranch || ""),
+    String(body.orderId || ""),
+    String(body.updatedSince || ""),
+    String(body.limit || ""),
+    String(body.statusLabel || ""),
+    String(body.timestamp || ""),
+  ].join("|");
 }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "GET") return res.status(405).json({ ok: false });
 
-  const timestamp = Date.now();
-  const role = "SNACK";
-  const staffId = "snack-tadart-selftest";
-  const branchId = "tadart";
-  const proof = sign(`${role}|${staffId}|${branchId}|${timestamp}`);
+  const body = {
+    action: "read",
+    role: "SNACK",
+    staffId: "snack-tadart-selftest",
+    branchId: "tadart",
+    requestedBranch: "tadart",
+    orderId: "",
+    updatedSince: "",
+    limit: 10,
+    statusLabel: "",
+    timestamp: Date.now(),
+  };
 
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/staff_read_orders`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_KEY,
-      "Content-Type": "application/json",
+  const key = secretKey();
+  if (!key) return res.status(503).json({ ok: false, code: "NOT_CONFIGURED" });
+
+  const proof = crypto
+    .createHmac("sha256", key)
+    .update(canonical(body))
+    .digest("hex");
+
+  const response = await fetch(
+    `${SUPABASE_URL}/functions/v1/staff-orders-service`,
+    {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ...body, proof }),
+      signal: AbortSignal.timeout(8000),
     },
-    body: JSON.stringify({
-      p_role: role,
-      p_staff_id: staffId,
-      p_branch_id: branchId,
-      p_requested_branch: branchId,
-      p_order_id: null,
-      p_updated_since: null,
-      p_limit: 10,
-      p_timestamp: timestamp,
-      p_proof: proof,
-    }),
-    signal: AbortSignal.timeout(8000),
-  });
+  );
 
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload?.ok === false) {
-    return res.status(502).json({
-      ok: false,
-      upstreamStatus: response.status,
-      code: String(payload?.message || payload?.code || "SELFTEST_FAILED"),
-    });
-  }
-
-  return res.status(200).json({
-    ok: true,
-    branch: branchId,
+  return res.status(response.ok && payload?.ok === true ? 200 : 502).json({
+    ok: response.ok && payload?.ok === true,
+    upstreamStatus: response.status,
+    code: payload?.code || null,
+    branch: "tadart",
     count: Array.isArray(payload?.rows) ? payload.rows.length : 0,
   });
 }
