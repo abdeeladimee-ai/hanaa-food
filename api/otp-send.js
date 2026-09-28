@@ -69,6 +69,7 @@ async function rateRequest(action, kind, key, authToken) {
     }),
     signal: AbortSignal.timeout(6000),
   });
+
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     console.error("OTP guard Edge failed", {
@@ -79,6 +80,7 @@ async function rateRequest(action, kind, key, authToken) {
     });
     throw new Error("OTP_RATE_LIMIT_UNAVAILABLE");
   }
+
   return payload;
 }
 
@@ -88,10 +90,6 @@ async function consumeLimit(kind, key, authToken) {
 
 async function reserveSend(key, authToken) {
   return rateRequest("reserve", "", key, authToken);
-}
-
-async function checkFresh(key, authToken) {
-  return rateRequest("fresh", "", key, authToken);
 }
 
 export default async function handler(req, res) {
@@ -114,13 +112,11 @@ export default async function handler(req, res) {
         "otp-send",
         config.token,
       );
-      const health = await checkFresh(healthKey, config.token);
-      const signedLimiter =
-        health?.ok === false && health?.code === "OTP_NOT_SENT";
-      return res.status(signedLimiter ? 200 : 503).json({
-        ok: signedLimiter,
+      await reserveSend(healthKey, config.token);
+      return res.status(200).json({
+        ok: true,
         twilioConfigured: true,
-        signedLimiter,
+        signedLimiter: true,
       });
     } catch {
       return res.status(503).json({
@@ -132,32 +128,47 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({ ok: false, code: "METHOD_NOT_ALLOWED" });
+    return res.status(405).json({
+      ok: false,
+      code: "METHOD_NOT_ALLOWED",
+    });
   }
 
   const phone = normalizeMoroccoPhone(req.body?.phone);
   if (!phone) {
-    return res.status(400).json({ ok: false, code: "INVALID_PHONE" });
+    return res.status(400).json({
+      ok: false,
+      code: "INVALID_PHONE",
+    });
   }
 
   const { sid, token, service } = config;
   if (!sid || !token || !service) {
-    return res.status(503).json({ ok: false, code: "OTP_NOT_CONFIGURED" });
+    return res.status(503).json({
+      ok: false,
+      code: "OTP_NOT_CONFIGURED",
+    });
   }
 
   const phoneKey = opaqueRateKey("phone", phone, token);
   const ipKey = opaqueRateKey("ip", clientIp(req), token);
+  const globalKey = opaqueRateKey("global", "hanaa-food", token);
 
   try {
     const checks = await Promise.all([
       consumeLimit("send_phone_day", phoneKey, token),
       consumeLimit("send_ip", ipKey, token),
       consumeLimit("send_ip_day", ipKey, token),
+      consumeLimit("send_global_hour", globalKey, token),
+      consumeLimit("send_global_day", globalKey, token),
     ]);
 
     const denied = checks.find((item) => item?.ok === false);
     if (denied) {
-      const retryAfter = Math.max(1, Number(denied.retry_after || 600));
+      const retryAfter = Math.max(
+        1,
+        Number(denied.retry_after || 600),
+      );
       res.setHeader("Retry-After", String(retryAfter));
       return res.status(429).json({
         ok: false,
@@ -190,7 +201,10 @@ export default async function handler(req, res) {
   }
 
   const auth = Buffer.from(`${sid}:${token}`).toString("base64");
-  const body = new URLSearchParams({ To: phone, Channel: "sms" });
+  const body = new URLSearchParams({
+    To: phone,
+    Channel: "sms",
+  });
 
   try {
     const response = await fetch(
@@ -224,7 +238,10 @@ export default async function handler(req, res) {
 
       return res
         .status(response.status >= 500 ? 502 : 400)
-        .json({ ok: false, code: "OTP_SEND_FAILED" });
+        .json({
+          ok: false,
+          code: "OTP_SEND_FAILED",
+        });
     }
 
     return res.status(200).json({
