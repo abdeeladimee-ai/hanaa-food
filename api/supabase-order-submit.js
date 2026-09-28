@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { verifyPhoneVerificationToken } from "../lib/phoneVerification.js";
+import { issueCustomerTrackingToken } from "../lib/customerTracking.js";
 
 const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
 const SUPABASE_KEY = "sb_publishable_P_ADKKjVA91hIFkgFN4H6Q_OH1rxmSX";
@@ -144,7 +145,11 @@ export default async function handler(req, res) {
       return res.status(502).json({ ok: false, code: "SUPABASE_ORDER_FAILED" });
     }
 
-    return res.status(201).json(payload);
+    const trackingToken = issueCustomerTrackingToken(
+      payload.row.id,
+      payload.row.customer_phone,
+    );
+    return res.status(201).json({ ...payload, trackingToken });
   } catch (error) {
     return res.status(502).json({
       ok: false,
