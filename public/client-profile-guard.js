@@ -1,8 +1,8 @@
 (() => {
-  const PROFILE_KEY = "hanaa-client-profile";
-  const ORDER_IDS_KEY = "hanaa-client-order-ids";
-  const ORDER_IDS_BY_PHONE_KEY = "hanaa-client-order-ids-by-phone";
-  const PENDING_ORDER_KEY = "hanaa-profile-required-order";
+  const PROFILE_KEY = "hanaa-client-profile-v2";
+  const ORDER_IDS_KEY = "hanaa-client-order-ids-v2";
+  const ORDER_IDS_BY_PHONE_KEY = "hanaa-client-order-ids-by-phone-v2";
+  const PENDING_ORDER_KEY = "hanaa-profile-required-order-v2";
 
   if (/^\/(admin|snack|livreur|login)(\/|$)/.test(window.location.pathname)) return;
 
