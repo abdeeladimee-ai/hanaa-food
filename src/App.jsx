@@ -1022,40 +1022,7 @@ function App() {
         )
         .filter((item) => item.quantity > 0),
     );
-  const verifyOrderPhone = async (phone) => {
-    const send = await fetch("/api/otp-send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
-    });
-    const sendPayload = await send.json().catch(() => ({}));
-    if (!send.ok || sendPayload?.ok === false) {
-      const error = new Error(sendPayload?.code || "OTP_SEND_FAILED");
-      error.code = sendPayload?.code || "OTP_SEND_FAILED";
-      throw error;
-    }
-
-    const code = window.prompt("Code SMS tsift l numéro dyalek. Dkhel code OTP:");
-    if (!code) {
-      const error = new Error("OTP_CANCELLED");
-      error.code = "OTP_CANCELLED";
-      throw error;
-    }
-
-    const check = await fetch("/api/otp-check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, code: String(code).trim() }),
-    });
-    const checkPayload = await check.json().catch(() => ({}));
-    if (!check.ok || checkPayload?.ok !== true) {
-      const error = new Error(checkPayload?.code || "OTP_INVALID");
-      error.code = checkPayload?.code || "OTP_INVALID";
-      throw error;
-    }
-  };
-
-  const place = async (details) => {
+  const place = async (details, phoneVerificationToken) => {
     const unavailableItems = cart.filter((cartItem) => {
       const product = products.find((item) => item.id === cartItem.productId);
       return isProductRuptureAtBranch(product, branch);
@@ -1065,18 +1032,6 @@ function App() {
       window.alert(
         "Kayna chi produits RUPTURE f Hanaa Food Rue Baghdad. 7yedhom mn panier w 3awed jarrab.",
       );
-      return;
-    }
-
-    try {
-      await verifyOrderPhone(details.phone);
-    } catch (error) {
-      if (error?.code === "OTP_CANCELLED") return;
-      if (error?.code === "OTP_INVALID") {
-        window.alert("Code OTP ghalat. Commande ma tconfirmatch.");
-        return;
-      }
-      window.alert("Ma 9drnach nsifto code SMS daba. Commande ma tconfirmatch.");
       return;
     }
 
@@ -1103,7 +1058,7 @@ function App() {
       createdAt: new Date().toISOString(),
     };
     try {
-      const savedOrder = await createOrder(next);
+      const savedOrder = await createOrder(next, { phoneVerificationToken });
       setOrder(savedOrder);
 
       if (savedOrder?.pendingSync) {
@@ -1927,6 +1882,9 @@ function Checkout({
   onPlace,
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpError, setOtpError] = useState("");
   const [data, setData] = useState(() => {
     let profile = {};
     try {
@@ -1944,8 +1902,14 @@ function Checkout({
       payment: "cash",
     };
   });
-  const update = (key, value) =>
+  const update = (key, value) => {
+    if (key === "phone") {
+      setOtpSent(false);
+      setOtpCode("");
+      setOtpError("");
+    }
     setData((current) => ({ ...current, [key]: value }));
+  };
   const valid =
     data.name &&
     phoneIsValid(data.phone) &&
@@ -1970,6 +1934,8 @@ function Checkout({
           if (!valid || submitting) return;
 
           setSubmitting(true);
+          setOtpError("");
+
           try {
             try {
               const existingProfile = JSON.parse(
@@ -1993,10 +1959,60 @@ function Checkout({
               );
             }
 
-            await onPlace({
-              ...data,
-              address: mode === "pickup" ? "" : data.address,
+            if (!otpSent) {
+              const response = await fetch("/api/otp-send", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ phone: data.phone }),
+              });
+              const payload = await response.json().catch(() => ({}));
+
+              if (!response.ok || payload?.ok === false) {
+                setOtpError(
+                  payload?.code === "OTP_RATE_LIMITED"
+                    ? "Tjarrab code bzzaf. Tsena chwya w 3awed."
+                    : "Ma 9drnach nsifto SMS daba. 3awed jarrab.",
+                );
+                return;
+              }
+
+              setOtpSent(true);
+              setOtpCode("");
+              return;
+            }
+
+            const cleanCode = String(otpCode || "").replace(/\D/g, "");
+            if (!/^\d{4,10}$/.test(cleanCode)) {
+              setOtpError("Dkhel code SMS li wslk.");
+              return;
+            }
+
+            const response = await fetch("/api/otp-check", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ phone: data.phone, code: cleanCode }),
             });
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok || payload?.ok !== true || !payload?.token) {
+              setOtpError(
+                payload?.code === "OTP_RATE_LIMITED"
+                  ? "Tjarrab code bzzaf. Tsena chwya w 3awed."
+                  : "Code SMS ghalat. 3awed dkhlou.",
+              );
+              return;
+            }
+
+            await onPlace(
+              {
+                ...data,
+                address: mode === "pickup" ? "" : data.address,
+              },
+              payload.token,
+            );
+          } catch (error) {
+            console.error("Checkout OTP failed:", error);
+            setOtpError("Wa9e3 mochkil. 3awed jarrab.");
           } finally {
             setSubmitting(false);
           }
@@ -2098,13 +2114,58 @@ function Checkout({
           />{" "}
           Paiement en ligne <span>Bientôt disponible</span>
         </label>
+        {otpSent && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 16,
+              border: "1px solid #e6e6e6",
+              borderRadius: 14,
+              background: "#fafafa",
+            }}
+          >
+            <label style={{ display: "grid", gap: 8, fontWeight: 700 }}>
+              Code SMS
+              <input
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={otpCode}
+                onChange={(event) =>
+                  setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 10))
+                }
+                placeholder="000000"
+                style={{ fontSize: 22, letterSpacing: 4, textAlign: "center" }}
+              />
+            </label>
+            <small style={{ display: "block", marginTop: 8 }}>
+              Code tsift l numéro {data.phone}.
+            </small>
+          </div>
+        )}
+        {otpError && (
+          <p
+            role="alert"
+            style={{
+              margin: "10px 0 0",
+              color: "#b42318",
+              fontWeight: 700,
+            }}
+          >
+            {otpError}
+          </p>
+        )}
         <button
           className="primary-action full"
           disabled={!valid || submitting}
           aria-busy={submitting ? "true" : "false"}
         >
-          {submitting ? "Envoi de la commande..." : "Confirmer la commande"}{" "}
-          <span>{submitting ? "…" : "→"}</span>
+          {submitting
+            ? "Chargement..."
+            : otpSent
+              ? "Valider le code et confirmer"
+              : "Recevoir le code SMS"}{" "}
+          <span>{submitting ? "…" : otpSent ? "✓" : "→"}</span>
         </button>
       </form>
     </main>
