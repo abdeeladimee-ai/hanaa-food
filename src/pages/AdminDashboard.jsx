@@ -227,7 +227,7 @@ export default function AdminDashboard({ onNavigate }) {
 
     const loadOrderingStatus = async () => {
       try {
-        const response = await fetch("/api/neon-settings", { cache: "no-store" });
+        const response = await fetch("/api/supabase-settings", { cache: "no-store" });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.ok === false) throw new Error(payload?.code || "SETTINGS_FAILED");
         if (active) setOrderingPaused(payload.paused === true);
@@ -512,7 +512,7 @@ export default function AdminDashboard({ onNavigate }) {
     setOrderingMessage("");
 
     try {
-      const response = await fetch("/api/neon-settings", {
+      const response = await fetch("/api/supabase-settings", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
