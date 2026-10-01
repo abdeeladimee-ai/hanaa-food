@@ -66,19 +66,10 @@
 
   const refreshStatus = async () => {
     try {
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/app_settings?key=eq.customer_ordering&select=value`,
-        {
-          cache: "no-store",
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-          },
-        },
-      );
-      const payload = await response.json().catch(() => []);
-      if (response.ok) {
-        paused = payload?.[0]?.value?.paused === true;
+      const response = await fetch("/api/supabase-settings");
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && payload?.ok === true) {
+        paused = payload?.paused === true;
         syncUi();
       }
     } catch {
@@ -115,7 +106,7 @@
 
   syncUi();
   void refreshStatus();
-  refreshTimer = window.setInterval(refreshStatus, 30000);
+  refreshTimer = window.setInterval(refreshStatus, 60000);
 
   window.addEventListener("beforeunload", () => {
     if (refreshTimer != null) window.clearInterval(refreshTimer);

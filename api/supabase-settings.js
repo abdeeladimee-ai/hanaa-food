@@ -1,65 +1,66 @@
-import crypto from "node:crypto";
 import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
+import { signSettingsRequest } from "./settings-proof-check.js";
 
-const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
-const SUPABASE_KEY = "sb_publishable_P_ADKKjVA91hIFkgFN4H6Q_OH1rxmSX";
+const SETTINGS_EDGE_URL =
+  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/settings-service";
+const CACHE_MS = 30 * 1000;
+const STALE_MS = 5 * 60 * 1000;
+let cached = null;
+let cachedAt = 0;
 
-function proofSecret() {
-  const authToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();
-  if (!authToken) return null;
-  return crypto
-    .createHash("sha256")
-    .update(`hanaa-supabase-order-v1|${authToken}`)
-    .digest();
-}
-
-function sign(value) {
-  const key = proofSecret();
-  if (!key) return "";
-  return crypto.createHmac("sha256", key).update(value).digest("hex");
-}
-
-function bodyOf(req) {
-  if (!req.body) return {};
-  if (typeof req.body === "object") return req.body;
-  try {
-    return JSON.parse(req.body);
-  } catch {
-    return {};
-  }
-}
-
-function send(res, status, body) {
-  res.setHeader("Cache-Control", "no-store");
+function send(res, status, body, cacheable = false) {
+  res.setHeader(
+    "Cache-Control",
+    cacheable
+      ? "public, s-maxage=30, stale-while-revalidate=300"
+      : "no-store",
+  );
   return res.status(status).json(body);
 }
 
-async function readSetting() {
-  const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/app_settings?key=eq.customer_ordering&select=value,updated_at`,
-    {
-      cache: "no-store",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-      },
-      signal: AbortSignal.timeout(10000),
-    },
-  );
-
-  const payload = await response.json().catch(() => []);
-  if (!response.ok) {
-    const error = new Error(String(payload?.message || payload?.code || "SETTINGS_READ_FAILED"));
-    error.status = response.status;
+async function callSettingsEdge(action, paused) {
+  const timestamp = Date.now();
+  const proof = signSettingsRequest(action, paused, timestamp);
+  if (!proof) {
+    const error = new Error("SETTINGS_PROOF_NOT_CONFIGURED");
+    error.status = 503;
     throw error;
   }
 
-  const row = payload?.[0] || null;
-  return {
-    ok: true,
-    paused: row?.value?.paused === true,
-    updatedAt: row?.updated_at || null,
-  };
+  const response = await fetch(SETTINGS_EDGE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, paused, timestamp, proof }),
+    signal: AbortSignal.timeout(8000),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok !== true) {
+    const error = new Error(String(payload?.code || "SUPABASE_SETTINGS_FAILED"));
+    error.status = response.status || 502;
+    throw error;
+  }
+
+  return payload;
+}
+
+async function readSetting() {
+  const age = Date.now() - cachedAt;
+  if (cached && age < CACHE_MS) return cached;
+
+  try {
+    const payload = await callSettingsEdge("read");
+    cached = {
+      ok: true,
+      paused: payload?.paused === true,
+      updatedAt: payload?.updatedAt || null,
+    };
+    cachedAt = Date.now();
+    return cached;
+  } catch (error) {
+    if (cached && age < STALE_MS) return { ...cached, stale: true };
+    throw error;
+  }
 }
 
 async function updateSetting(req) {
@@ -70,61 +71,21 @@ async function updateSetting(req) {
     throw error;
   }
 
-  if (!proofSecret()) {
-    const error = new Error("SETTINGS_PROOF_NOT_CONFIGURED");
-    error.status = 503;
-    throw error;
-  }
-
-  const paused = bodyOf(req).paused === true;
-  const timestamp = Date.now();
-  const proof = sign(`settings|${timestamp}`);
-
-  const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/app_settings?key=eq.customer_ordering`,
-    {
-      method: "PATCH",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-        "X-Hanaa-Settings-Timestamp": String(timestamp),
-        "X-Hanaa-Settings-Proof": proof,
-      },
-      body: JSON.stringify({
-        value: { paused },
-        updated_at: new Date().toISOString(),
-      }),
-      signal: AbortSignal.timeout(10000),
-    },
-  );
-
-  const payload = await response.json().catch(() => []);
-  if (!response.ok) {
-    const error = new Error(String(payload?.message || payload?.code || "SETTINGS_UPDATE_FAILED"));
-    error.status = response.status;
-    throw error;
-  }
-
-  const row = payload?.[0];
-  if (!row) {
-    const error = new Error("SETTINGS_UPDATE_DENIED");
-    error.status = 403;
-    throw error;
-  }
-
-  return {
+  const paused = req.body?.paused === true;
+  const payload = await callSettingsEdge("update", paused);
+  cached = {
     ok: true,
-    paused: row?.value?.paused === true,
-    updatedAt: row?.updated_at || null,
+    paused: payload?.paused === true,
+    updatedAt: payload?.updatedAt || null,
   };
+  cachedAt = Date.now();
+  return cached;
 }
 
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
-      return send(res, 200, await readSetting());
+      return send(res, 200, await readSetting(), true);
     }
 
     if (req.method === "PATCH") {
