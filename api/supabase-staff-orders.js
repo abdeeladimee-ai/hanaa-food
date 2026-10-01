@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 
 const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
-const SUPABASE_KEY = "sb_publishable_P_ADKKjVA91hIFkgFN4H6Q_OH1rxmSX";
 const STAFF_EDGE_URL = `${SUPABASE_URL}/functions/v1/staff-orders-service`;
 
 function secretKey() {
@@ -51,7 +50,6 @@ async function callStaffEdge(body) {
   const response = await fetch(STAFF_EDGE_URL, {
     method: "POST",
     headers: {
-      apikey: SUPABASE_KEY,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ ...body, proof }),
