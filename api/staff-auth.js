@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import { issueStaffToken, verifiedStaffFromRequest } from "../lib/staffAuth.js";
 
-const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
-const SUPABASE_KEY = "sb_publishable_P_ADKKjVA91hIFkgFN4H6Q_OH1rxmSX";
+const STAFF_ACCOUNT_EDGE_URL =
+  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/staff-account-service";
 
 const coreAccounts = [
   { id: "admin-dev", email: "admin@hanaa-food.test", name: "Admin", role: "ADMIN", branchId: null, branchName: null },
@@ -54,7 +54,7 @@ function proofSecret() {
   if (!authToken) return null;
   return crypto
     .createHash("sha256")
-    .update(`hanaa-supabase-order-v1|${authToken}`)
+    .update(`hanaa-staff-store-v2|${authToken}`)
     .digest();
 }
 
@@ -64,21 +64,34 @@ function sign(value) {
   return crypto.createHmac("sha256", key).update(value).digest("hex");
 }
 
-function signedHeaders(action) {
-  if (!proofSecret()) {
+function staffStoreProof(action, id, timestamp) {
+  if (!proofSecret()) return "";
+  return sign(`staff-store|${action}|${id}|${timestamp}`);
+}
+
+async function staffStoreCall(action, { id = "", row, patch } = {}) {
+  const timestamp = Date.now();
+  const proof = staffStoreProof(action, id, timestamp);
+  if (!proof) {
     const error = new Error("STAFF_STORE_PROOF_NOT_CONFIGURED");
     error.status = 503;
     throw error;
   }
-  const timestamp = Date.now();
-  return {
-    apikey: SUPABASE_KEY,
-    Authorization: `Bearer ${SUPABASE_KEY}`,
-    "Content-Type": "application/json",
-    "X-Hanaa-Staff-Action": action,
-    "X-Hanaa-Staff-Timestamp": String(timestamp),
-    "X-Hanaa-Staff-Proof": sign(`staff-store|${action}|${timestamp}`),
-  };
+
+  const response = await fetch(STAFF_ACCOUNT_EDGE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, id, row, patch, timestamp, proof }),
+    signal: AbortSignal.timeout(10000),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok === false) {
+    const error = new Error(String(payload?.code || "STAFF_STORE_UNAVAILABLE"));
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
 }
 
 function safeEqual(left, right) {
@@ -140,86 +153,23 @@ function requireAdmin(req, res) {
 }
 
 async function staffRows() {
-  const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/staff_accounts?select=id,email,phone,name,password_hash,role,branch_id,branch_name,active,created_at,updated_at&order=role.asc,name.asc`,
-    {
-      headers: signedHeaders("read"),
-      cache: "no-store",
-      signal: AbortSignal.timeout(10000),
-    },
-  );
-  const payload = await response.json().catch(() => []);
-  if (!response.ok) {
-    const error = new Error(String(payload?.message || payload?.code || "STAFF_STORE_READ_FAILED"));
-    error.status = response.status;
-    throw error;
-  }
-  return Array.isArray(payload) ? payload : [];
+  const payload = await staffStoreCall("read");
+  return Array.isArray(payload?.rows) ? payload.rows : [];
 }
 
 async function saveStaffRow(row) {
-  const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/staff_accounts?on_conflict=id`,
-    {
-      method: "POST",
-      headers: {
-        ...signedHeaders("write"),
-        Prefer: "resolution=merge-duplicates,return=representation",
-      },
-      body: JSON.stringify(row),
-      signal: AbortSignal.timeout(10000),
-    },
-  );
-  const payload = await response.json().catch(() => []);
-  if (!response.ok) {
-    const error = new Error(String(payload?.message || payload?.code || "STAFF_STORE_WRITE_FAILED"));
-    error.status = response.status;
-    throw error;
-  }
-  return Array.isArray(payload) ? payload[0] : null;
+  const payload = await staffStoreCall("upsert", { id: String(row?.id || ""), row });
+  return payload?.row || null;
 }
 
 async function patchStaffRow(id, patch) {
-  const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/staff_accounts?id=eq.${encodeURIComponent(id)}`,
-    {
-      method: "PATCH",
-      headers: {
-        ...signedHeaders("write"),
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify(patch),
-      signal: AbortSignal.timeout(10000),
-    },
-  );
-  const payload = await response.json().catch(() => []);
-  if (!response.ok) {
-    const error = new Error(String(payload?.message || payload?.code || "STAFF_STORE_WRITE_FAILED"));
-    error.status = response.status;
-    throw error;
-  }
-  return Array.isArray(payload) ? payload[0] : null;
+  const payload = await staffStoreCall("patch", { id, patch });
+  return payload?.row || null;
 }
 
 async function removeStaffRow(id) {
-  const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/staff_accounts?id=eq.${encodeURIComponent(id)}`,
-    {
-      method: "DELETE",
-      headers: {
-        ...signedHeaders("delete"),
-        Prefer: "return=representation",
-      },
-      signal: AbortSignal.timeout(10000),
-    },
-  );
-  const payload = await response.json().catch(() => []);
-  if (!response.ok) {
-    const error = new Error(String(payload?.message || payload?.code || "STAFF_STORE_DELETE_FAILED"));
-    error.status = response.status;
-    throw error;
-  }
-  return Array.isArray(payload) ? payload : [];
+  const payload = await staffStoreCall("delete", { id });
+  return Array.isArray(payload?.rows) ? payload.rows : [];
 }
 
 async function dynamicLogin(identifier, password) {

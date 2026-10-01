@@ -1,22 +1,25 @@
 import crypto from "node:crypto";
 import { verifyCustomerTrackingToken } from "../lib/customerTracking.js";
 
-const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
-const SUPABASE_KEY = "sb_publishable_P_ADKKjVA91hIFkgFN4H6Q_OH1rxmSX";
+const CUSTOMER_EDGE_URL =
+  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/customer-order-service";
 
-function proofSecret() {
+function secretKey() {
   const authToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();
   if (!authToken) return null;
   return crypto
     .createHash("sha256")
-    .update(`hanaa-supabase-order-v1|${authToken}`)
+    .update(`hanaa-customer-read-v1|${authToken}`)
     .digest();
 }
 
-function sign(value) {
-  const key = proofSecret();
+function sign(orderId, timestamp) {
+  const key = secretKey();
   if (!key) return "";
-  return crypto.createHmac("sha256", key).update(value).digest("hex");
+  return crypto
+    .createHmac("sha256", key)
+    .update(`customer-read|${orderId}|${timestamp}`)
+    .digest("hex");
 }
 
 export default async function handler(req, res) {
@@ -35,33 +38,25 @@ export default async function handler(req, res) {
   }
 
   const timestamp = Date.now();
-  const proof = sign(`customer|${orderId}|${timestamp}`);
+  const proof = sign(orderId, timestamp);
   if (!proof) {
     return res.status(503).json({ ok: false, code: "TRACKING_NOT_CONFIGURED" });
   }
 
   try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/rpc/customer_read_order`,
-      {
-        method: "POST",
-        headers: {
-          apikey: SUPABASE_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          p_order_id: orderId,
-          p_timestamp: timestamp,
-          p_proof: proof,
-        }),
-        signal: AbortSignal.timeout(8000),
-      },
-    );
+    const response = await fetch(CUSTOMER_EDGE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, timestamp, proof }),
+      signal: AbortSignal.timeout(9000),
+    });
 
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const code = String(payload?.message || payload?.code || "TRACKING_FAILED");
-      return res.status(code === "ORDER_NOT_FOUND" ? 404 : 502).json({ ok: false, code });
+    if (!response.ok || payload?.ok === false) {
+      const code = String(payload?.code || "TRACKING_FAILED");
+      return res
+        .status(code === "ORDER_NOT_FOUND" ? 404 : response.status >= 500 ? 502 : response.status)
+        .json({ ok: false, code });
     }
 
     return res.status(200).json(payload);
