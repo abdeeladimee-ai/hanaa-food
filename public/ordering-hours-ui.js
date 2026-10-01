@@ -3,8 +3,6 @@
 
   const BANNER_ID = "hanaa-ordering-paused-banner";
   const MESSAGE = "Les commandes sont temporairement indisponibles. Merci de réessayer plus tard.";
-  const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
-  const SUPABASE_KEY = "sb_publishable_P_ADKKjVA91hIFkgFN4H6Q_OH1rxmSX";
   let paused = true;
   let refreshTimer = null;
 
