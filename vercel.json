@@ -2,6 +2,34 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "routes": [
     {
+      "src": "/api/neon-orders",
+      "status": 410,
+      "headers": {
+        "Cache-Control": "public, max-age=300"
+      }
+    },
+    {
+      "src": "/api/neon-health",
+      "status": 410,
+      "headers": {
+        "Cache-Control": "public, max-age=300"
+      }
+    },
+    {
+      "src": "/api/neon-settings",
+      "status": 410,
+      "headers": {
+        "Cache-Control": "public, max-age=300"
+      }
+    },
+    {
+      "src": "/api/order-proof",
+      "status": 410,
+      "headers": {
+        "Cache-Control": "public, max-age=300"
+      }
+    },
+    {
       "src": "/api/orders",
       "status": 410,
       "headers": {
@@ -41,6 +69,13 @@
       "headers": {
         "Cache-Control": "no-store"
       }
+    },
+    {
+      "src": "/products/(.*)",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      },
+      "continue": true
     },
     {
       "src": "/assets/(.*)",
