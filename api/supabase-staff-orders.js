@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 
-const SUPABASE_URL = "https://kkmbiiiglgevwehhmtzq.supabase.co";
-const STAFF_EDGE_URL = `${SUPABASE_URL}/functions/v1/staff-orders-service`;
+const STAFF_EDGE_URLS = [
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/staff-orders-service",
+  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/staff-orders-service",
+];
 
 function secretKey() {
   const authToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();
@@ -39,7 +41,7 @@ function send(res, status, body) {
   return res.status(status).json(body);
 }
 
-async function callStaffEdge(body) {
+async function callStaffEdgeUrl(url, body, timeoutMs = 7000) {
   const proof = sign(body);
   if (!proof) {
     const error = new Error("STAFF_EDGE_NOT_CONFIGURED");
@@ -47,13 +49,13 @@ async function callStaffEdge(body) {
     throw error;
   }
 
-  const response = await fetch(STAFF_EDGE_URL, {
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ ...body, proof }),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -64,6 +66,91 @@ async function callStaffEdge(body) {
   }
 
   return payload;
+}
+
+async function readAcrossBackends(body) {
+  const results = await Promise.allSettled(
+    STAFF_EDGE_URLS.map((url, index) =>
+      callStaffEdgeUrl(url, body, index === 0 ? 6000 : 3500),
+    ),
+  );
+
+  const rows = [];
+  let firstError = null;
+
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      if (Array.isArray(result.value?.rows)) rows.push(...result.value.rows);
+    } else if (!firstError) {
+      firstError = result.reason;
+    }
+  }
+
+  if (!rows.length && results.every((item) => item.status === "rejected")) {
+    throw firstError || new Error("SUPABASE_STAFF_FAILED");
+  }
+
+  const byId = new Map();
+  for (const row of rows) {
+    const id = String(row?.id || "");
+    if (!id) continue;
+
+    const current = byId.get(id);
+    if (!current) {
+      byId.set(id, row);
+      continue;
+    }
+
+    const currentTime =
+      Date.parse(String(current?.updated_at || current?.created_at || "")) || 0;
+    const rowTime =
+      Date.parse(String(row?.updated_at || row?.created_at || "")) || 0;
+
+    if (rowTime > currentTime) byId.set(id, row);
+  }
+
+  const limit = Math.max(1, Math.min(100, Number(body?.limit || 60)));
+  const merged = [...byId.values()]
+    .sort((left, right) => {
+      const leftTime =
+        Date.parse(String(left?.updated_at || left?.created_at || "")) || 0;
+      const rightTime =
+        Date.parse(String(right?.updated_at || right?.created_at || "")) || 0;
+      return rightTime - leftTime;
+    })
+    .slice(0, limit);
+
+  return { ok: true, rows: merged };
+}
+
+async function updateWithFailover(body) {
+  let lastError = null;
+
+  for (let index = 0; index < STAFF_EDGE_URLS.length; index += 1) {
+    try {
+      const payload = await callStaffEdgeUrl(
+        STAFF_EDGE_URLS[index],
+        body,
+        index === 0 ? 6500 : 4500,
+      );
+      if (index > 0) console.warn("STAFF_ORDER_FAILOVER_ACTIVE");
+      return payload;
+    } catch (error) {
+      lastError = error;
+      const code = String(error?.message || "");
+      const status = Number(error?.status || 0);
+      const canFallback =
+        code === "ORDER_NOT_FOUND" ||
+        status >= 500 ||
+        status === 404 ||
+        error?.name === "TimeoutError" ||
+        error?.name === "AbortError";
+
+      if (!canFallback) throw error;
+    }
+  }
+
+  throw lastError || new Error("SUPABASE_STAFF_FAILED");
 }
 
 export default async function handler(req, res) {
@@ -86,7 +173,7 @@ export default async function handler(req, res) {
         Math.min(100, Number.isFinite(requestedLimit) ? requestedLimit : 60),
       );
 
-      const payload = await callStaffEdge({
+      const payload = await readAcrossBackends({
         action: "read",
         role,
         staffId,
@@ -108,7 +195,7 @@ export default async function handler(req, res) {
         return send(res, 400, { ok: false, code: "INVALID_ORDER" });
       }
 
-      const payload = await callStaffEdge({
+      const payload = await updateWithFailover({
         action: "update",
         role,
         staffId,
