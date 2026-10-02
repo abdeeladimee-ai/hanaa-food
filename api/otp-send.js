@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 
 const RATE_LIMIT_URLS = [
   "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/otp-rate-limit",
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/otp-rate-limit",
 ];
 
 function normalizeMoroccoPhone(value) {
