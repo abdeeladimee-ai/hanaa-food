@@ -2,7 +2,7 @@ import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 import { signSettingsRequest } from "./settings-proof-check.js";
 
 const SETTINGS_EDGE_URL =
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/settings-service";
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/settings-service";
 const CACHE_MS = 30 * 1000;
 const STALE_MS = 5 * 60 * 1000;
 let cached = null;

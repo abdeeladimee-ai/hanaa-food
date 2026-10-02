@@ -7,7 +7,7 @@ import {
 import { issueCustomerTrackingToken } from "../lib/customerTracking.js";
 
 const SUPABASE_FUNCTION_URL =
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/submit-order-otp";
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/submit-order-otp";
 
 function send(res, status, body) {
   res.setHeader("Cache-Control", "no-store");

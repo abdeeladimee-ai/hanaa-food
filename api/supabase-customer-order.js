@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { verifyCustomerTrackingToken } from "../lib/customerTracking.js";
 
 const CUSTOMER_EDGE_URL =
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/customer-order-service";
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/customer-order-service";
 
 function secretKey() {
   const authToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();

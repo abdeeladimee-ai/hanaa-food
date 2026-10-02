@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
 const RATE_LIMIT_URL =
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/otp-rate-limit";
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/otp-rate-limit";
 
 function normalizeMoroccoPhone(value) {
   const digits = String(value || "").replace(/\D/g, "");
@@ -203,7 +203,7 @@ export default async function handler(req, res) {
   const auth = Buffer.from(`${sid}:${token}`).toString("base64");
   const body = new URLSearchParams({
     To: phone,
-    Channel: "sms",
+    Channel: "call",
   });
 
   try {

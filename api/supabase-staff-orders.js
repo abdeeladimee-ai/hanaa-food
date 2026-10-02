@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 
-const SUPABASE_URL = "https://grkezxhswfocqlvujzdy.supabase.co";
+const SUPABASE_URL = "https://kkmbiiiglgevwehhmtzq.supabase.co";
 const STAFF_EDGE_URL = `${SUPABASE_URL}/functions/v1/staff-orders-service`;
 
 function secretKey() {

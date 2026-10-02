@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 
 const EDGE_HEALTH_URL =
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/submit-order-otp?health=1";
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/submit-order-otp?health=1";
 const OTP_GUARD_URL =
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/otp-rate-limit";
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/otp-rate-limit";
 
 function rateProof(action, kind, key, timestamp, authToken) {
   const secret = crypto

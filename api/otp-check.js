@@ -6,7 +6,7 @@ import {
 } from "../lib/phoneVerification.js";
 
 const RATE_LIMIT_URL =
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/otp-rate-limit";
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/otp-rate-limit";
 
 function clientIp(req) {
   return (
