@@ -8,7 +8,6 @@ import { issueCustomerTrackingToken } from "../lib/customerTracking.js";
 
 const SUPABASE_FUNCTION_URLS = [
   "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/submit-order-otp",
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/submit-order-otp",
 ];
 
 function send(res, status, body) {
