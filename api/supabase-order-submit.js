@@ -6,8 +6,10 @@ import {
 } from "../lib/phoneVerification.js";
 import { issueCustomerTrackingToken } from "../lib/customerTracking.js";
 
-const SUPABASE_FUNCTION_URL =
-  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/submit-order-otp";
+const SUPABASE_FUNCTION_URLS = [
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/submit-order-otp",
+  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/submit-order-otp",
+];
 
 function send(res, status, body) {
   res.setHeader("Cache-Control", "no-store");
@@ -48,21 +50,24 @@ function statusFor(code, fallback = 502) {
 async function submitToSupabase(row, phoneVerificationToken) {
   let lastError = null;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let index = 0; index < SUPABASE_FUNCTION_URLS.length; index += 1) {
+    const url = SUPABASE_FUNCTION_URLS[index];
+
     try {
-      const response = await fetch(SUPABASE_FUNCTION_URL, {
+      const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           row,
           verificationToken: phoneVerificationToken,
         }),
-        signal: AbortSignal.timeout(7000),
+        signal: AbortSignal.timeout(index === 0 ? 6000 : 4500),
       });
 
       const payload = await response.json().catch(() => ({}));
 
       if (response.ok && payload?.ok === true && payload?.row) {
+        if (index > 0) console.warn("ORDER_FAILOVER_ACTIVE");
         return payload;
       }
 
@@ -71,20 +76,24 @@ async function submitToSupabase(row, phoneVerificationToken) {
       error.code = code;
       error.status = response.status;
 
-      if (response.status < 500 || attempt === 1) throw error;
+      const retryableUpstream =
+        response.status >= 500 ||
+        response.status === 404 ||
+        ["SUPABASE_ORDER_UNAVAILABLE", "SUPABASE_ORDER_TIMEOUT", "SUPABASE_HEALTH_FAILED"].includes(code);
+
+      if (!retryableUpstream) throw error;
       lastError = error;
     } catch (error) {
-      lastError = error;
       const retryable =
         error?.name === "TimeoutError" ||
         error?.name === "AbortError" ||
         error instanceof TypeError ||
-        Number(error?.status || 0) >= 500;
+        Number(error?.status || 0) >= 500 ||
+        Number(error?.status || 0) === 404;
 
-      if (!retryable || attempt === 1) throw error;
+      if (!retryable) throw error;
+      lastError = error;
     }
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
   throw lastError || new Error("SUPABASE_ORDER_UNAVAILABLE");
