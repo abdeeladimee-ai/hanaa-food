@@ -1,8 +1,10 @@
 import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 import { signSettingsRequest } from "./settings-proof-check.js";
 
-const SETTINGS_EDGE_URL =
-  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/settings-service";
+const SETTINGS_EDGE_URLS = [
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/settings-service",
+  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/settings-service",
+];
 const CACHE_MS = 30 * 1000;
 const STALE_MS = 5 * 60 * 1000;
 let cached = null;
@@ -18,7 +20,7 @@ function send(res, status, body, cacheable = false) {
   return res.status(status).json(body);
 }
 
-async function callSettingsEdge(action, paused) {
+async function callOneSettingsEdge(url, action, paused, timeoutMs) {
   const timestamp = Date.now();
   const proof = signSettingsRequest(action, paused, timestamp);
   if (!proof) {
@@ -27,11 +29,11 @@ async function callSettingsEdge(action, paused) {
     throw error;
   }
 
-  const response = await fetch(SETTINGS_EDGE_URL, {
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, paused, timestamp, proof }),
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -42,6 +44,42 @@ async function callSettingsEdge(action, paused) {
   }
 
   return payload;
+}
+
+async function callSettingsEdge(action, paused) {
+  if (action === "update") {
+    const results = await Promise.allSettled(
+      SETTINGS_EDGE_URLS.map((url, index) =>
+        callOneSettingsEdge(url, action, paused, index === 0 ? 5500 : 3000),
+      ),
+    );
+
+    const success = results.find((item) => item.status === "fulfilled");
+    if (success) return success.value;
+
+    const firstError = results.find((item) => item.status === "rejected");
+    throw firstError?.reason || new Error("SUPABASE_SETTINGS_FAILED");
+  }
+
+  let lastError = null;
+  for (let index = 0; index < SETTINGS_EDGE_URLS.length; index += 1) {
+    try {
+      const payload = await callOneSettingsEdge(
+        SETTINGS_EDGE_URLS[index],
+        action,
+        paused,
+        index === 0 ? 5500 : 3500,
+      );
+      if (index > 0) console.warn("SETTINGS_FAILOVER_ACTIVE");
+      return payload;
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.status || 0);
+      if (status > 0 && status < 500 && status !== 404) throw error;
+    }
+  }
+
+  throw lastError || new Error("SUPABASE_SETTINGS_FAILED");
 }
 
 async function readSetting() {
