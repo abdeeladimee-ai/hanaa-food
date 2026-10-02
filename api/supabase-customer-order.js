@@ -3,7 +3,6 @@ import { verifyCustomerTrackingToken } from "../lib/customerTracking.js";
 
 const CUSTOMER_EDGE_URLS = [
   "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/customer-order-service",
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/customer-order-service",
 ];
 
 function secretKey() {
