@@ -3,7 +3,6 @@ import { verifiedStaffFromRequest } from "../lib/staffAuth.js";
 
 const STAFF_EDGE_URLS = [
   "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/staff-orders-service",
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/staff-orders-service",
 ];
 
 function secretKey() {
