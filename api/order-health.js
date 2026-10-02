@@ -6,11 +6,6 @@ const SUPABASE_BACKENDS = [
     health: "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/submit-order-otp?health=1",
     limiter: "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/otp-rate-limit",
   },
-  {
-    name: "secondary",
-    health: "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/submit-order-otp?health=1",
-    limiter: "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/otp-rate-limit",
-  },
 ];
 
 function rateProof(action, kind, key, timestamp, authToken) {
