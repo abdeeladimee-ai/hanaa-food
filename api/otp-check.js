@@ -5,8 +5,10 @@ import {
   normalizeMoroccanPhoneE164,
 } from "../lib/phoneVerification.js";
 
-const RATE_LIMIT_URL =
-  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/otp-rate-limit";
+const RATE_LIMIT_URLS = [
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/otp-rate-limit",
+  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/otp-rate-limit",
+];
 
 function clientIp(req) {
   return (
@@ -45,30 +47,47 @@ function rateProof(action, kind, key, timestamp, authToken) {
 }
 
 async function rateRequest(action, kind, key, authToken) {
-  const timestamp = Date.now();
-  const response = await fetch(RATE_LIMIT_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action,
-      kind,
-      key,
-      timestamp,
-      proof: rateProof(action, kind, key, timestamp, authToken),
-    }),
-    signal: AbortSignal.timeout(6000),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    console.error("OTP guard Edge failed", {
-      action,
-      kind,
-      status: response.status,
-      code: payload?.code,
-    });
-    throw new Error("OTP_RATE_LIMIT_UNAVAILABLE");
+  let lastError = null;
+
+  for (let index = 0; index < RATE_LIMIT_URLS.length; index += 1) {
+    const timestamp = Date.now();
+    try {
+      const response = await fetch(RATE_LIMIT_URLS[index], {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          kind,
+          key,
+          timestamp,
+          proof: rateProof(action, kind, key, timestamp, authToken),
+        }),
+        signal: AbortSignal.timeout(index === 0 ? 4500 : 3000),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok) {
+        if (index > 0) console.warn("OTP_CHECK_LIMITER_FAILOVER_ACTIVE");
+        return payload;
+      }
+
+      const error = new Error("OTP_RATE_LIMIT_UNAVAILABLE");
+      error.status = response.status;
+      lastError = error;
+      if (response.status < 500 && response.status !== 404) throw error;
+    } catch (error) {
+      lastError = error;
+      const retryable =
+        error?.name === "TimeoutError" ||
+        error?.name === "AbortError" ||
+        error instanceof TypeError ||
+        Number(error?.status || 0) >= 500 ||
+        Number(error?.status || 0) === 404;
+      if (!retryable) throw error;
+    }
   }
-  return payload;
+
+  throw lastError || new Error("OTP_RATE_LIMIT_UNAVAILABLE");
 }
 
 async function consumeLimit(kind, key, authToken) {
