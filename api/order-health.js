@@ -1,9 +1,17 @@
 import crypto from "node:crypto";
 
-const EDGE_HEALTH_URL =
-  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/submit-order-otp?health=1";
-const OTP_GUARD_URL =
-  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/otp-rate-limit";
+const SUPABASE_BACKENDS = [
+  {
+    name: "primary",
+    health: "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/submit-order-otp?health=1",
+    limiter: "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/otp-rate-limit",
+  },
+  {
+    name: "secondary",
+    health: "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/submit-order-otp?health=1",
+    limiter: "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/otp-rate-limit",
+  },
+];
 
 function rateProof(action, kind, key, timestamp, authToken) {
   const secret = crypto
@@ -22,7 +30,7 @@ function rateProof(action, kind, key, timestamp, authToken) {
     .digest("hex");
 }
 
-async function checkOtpGuard(authToken) {
+async function checkOtpGuard(authToken, limiterUrl) {
   const key = crypto
     .createHash("sha256")
     .update("hanaa-health-check")
@@ -30,7 +38,7 @@ async function checkOtpGuard(authToken) {
   const timestamp = Date.now();
 
   try {
-    const response = await fetch(OTP_GUARD_URL, {
+    const response = await fetch(limiterUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -69,42 +77,59 @@ export default async function handler(req, res) {
       String(process.env.TWILIO_VERIFY_SERVICE_SID || "").trim(),
   );
 
-  try {
-    const [edgeResponse, otpGuard] = await Promise.all([
-      fetch(EDGE_HEALTH_URL, {
-        signal: AbortSignal.timeout(7000),
-      }),
-      authToken ? checkOtpGuard(authToken) : Promise.resolve(false),
-    ]);
+  let lastEdgeCode = "EDGE_HEALTH_UNAVAILABLE";
 
-    const edge = await edgeResponse.json().catch(() => ({}));
+  for (let index = 0; index < SUPABASE_BACKENDS.length; index += 1) {
+    const backend = SUPABASE_BACKENDS[index];
 
-    const ok =
-      edgeResponse.ok &&
-      edge?.ok === true &&
-      edge?.database === true &&
-      twilioConfigured &&
-      otpGuard;
+    try {
+      const [edgeResponse, otpGuard] = await Promise.all([
+        fetch(backend.health, {
+          signal: AbortSignal.timeout(index === 0 ? 5000 : 3500),
+        }),
+        authToken
+          ? checkOtpGuard(authToken, backend.limiter)
+          : Promise.resolve(false),
+      ]);
 
-    return res.status(ok ? 200 : 503).json({
-      ok,
-      twilioConfigured,
-      database: edge?.database === true,
-      orderingPaused: edge?.orderingPaused === true,
-      otpGuard,
-      edgeCode: edge?.code || null,
-    });
-  } catch (error) {
-    return res.status(503).json({
-      ok: false,
-      twilioConfigured,
-      database: false,
-      orderingPaused: false,
-      otpGuard: false,
-      edgeCode:
+      const edge = await edgeResponse.json().catch(() => ({}));
+      lastEdgeCode = edge?.code || null;
+
+      const ok =
+        edgeResponse.ok &&
+        edge?.ok === true &&
+        edge?.database === true &&
+        twilioConfigured &&
+        otpGuard;
+
+      if (ok) {
+        return res.status(200).json({
+          ok: true,
+          twilioConfigured,
+          database: true,
+          orderingPaused: edge?.orderingPaused === true,
+          otpGuard: true,
+          activeBackend: backend.name,
+          failoverActive: index > 0,
+          edgeCode: edge?.code || null,
+        });
+      }
+    } catch (error) {
+      lastEdgeCode =
         error?.name === "TimeoutError" || error?.name === "AbortError"
           ? "EDGE_HEALTH_TIMEOUT"
-          : "EDGE_HEALTH_UNAVAILABLE",
-    });
+          : "EDGE_HEALTH_UNAVAILABLE";
+    }
   }
+
+  return res.status(503).json({
+    ok: false,
+    twilioConfigured,
+    database: false,
+    orderingPaused: false,
+    otpGuard: false,
+    activeBackend: null,
+    failoverActive: false,
+    edgeCode: lastEdgeCode,
+  });
 }
