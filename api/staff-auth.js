@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { issueStaffToken, verifiedStaffFromRequest } from "../lib/staffAuth.js";
 
 const STAFF_ACCOUNT_EDGE_URL =
-  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/staff-account-service";
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/staff-account-service";
 
 const coreAccounts = [
   { id: "admin-dev", email: "admin@hanaa-food.test", name: "Admin", role: "ADMIN", branchId: null, branchName: null },
