@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 import { verifyCustomerTrackingToken } from "../lib/customerTracking.js";
 
-const CUSTOMER_EDGE_URL =
-  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/customer-order-service";
+const CUSTOMER_EDGE_URLS = [
+  "https://kkmbiiiglgevwehhmtzq.supabase.co/functions/v1/customer-order-service",
+  "https://grkezxhswfocqlvujzdy.supabase.co/functions/v1/customer-order-service",
+];
 
 function secretKey() {
   const authToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();
@@ -43,27 +45,49 @@ export default async function handler(req, res) {
     return res.status(503).json({ ok: false, code: "TRACKING_NOT_CONFIGURED" });
   }
 
-  try {
-    const response = await fetch(CUSTOMER_EDGE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderId, timestamp, proof }),
-      signal: AbortSignal.timeout(9000),
-    });
+  let lastCode = "TRACKING_UNAVAILABLE";
+  let lastStatus = 502;
 
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.ok === false) {
+  for (let index = 0; index < CUSTOMER_EDGE_URLS.length; index += 1) {
+    try {
+      const response = await fetch(CUSTOMER_EDGE_URLS[index], {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, timestamp, proof }),
+        signal: AbortSignal.timeout(index === 0 ? 6500 : 4500),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && payload?.ok !== false) {
+        if (index > 0) console.warn("TRACKING_FAILOVER_ACTIVE");
+        return res.status(200).json(payload);
+      }
+
       const code = String(payload?.code || "TRACKING_FAILED");
-      return res
-        .status(code === "ORDER_NOT_FOUND" ? 404 : response.status >= 500 ? 502 : response.status)
-        .json({ ok: false, code });
-    }
+      lastCode = code;
+      lastStatus =
+        code === "ORDER_NOT_FOUND"
+          ? 404
+          : response.status >= 500
+            ? 502
+            : response.status;
 
-    return res.status(200).json(payload);
-  } catch (error) {
-    return res.status(502).json({
-      ok: false,
-      code: error?.name === "TimeoutError" ? "TRACKING_TIMEOUT" : "TRACKING_UNAVAILABLE",
-    });
+      const canFallback =
+        response.status >= 500 ||
+        response.status === 404 ||
+        ["TRACKING_UNAVAILABLE", "TRACKING_TIMEOUT", "ORDER_NOT_FOUND"].includes(code);
+
+      if (!canFallback) {
+        return res.status(lastStatus).json({ ok: false, code });
+      }
+    } catch (error) {
+      lastCode =
+        error?.name === "TimeoutError" || error?.name === "AbortError"
+          ? "TRACKING_TIMEOUT"
+          : "TRACKING_UNAVAILABLE";
+      lastStatus = 502;
+    }
   }
+
+  return res.status(lastStatus).json({ ok: false, code: lastCode });
 }
