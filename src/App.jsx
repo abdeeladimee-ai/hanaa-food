@@ -1158,7 +1158,7 @@ function App() {
         throw error;
       }
       if (error?.code === "OTP_INVALID" || error?.message === "OTP_INVALID") {
-        window.alert("Code SMS ghalat wla sala. 3awed dkhel code s7i7.");
+        window.alert("Code li sma3ti f lappel ghalat wla sala. 3awed dkhel code s7i7.");
         return;
       }
       if (error?.code === "OTP_RATE_LIMITED" || error?.message === "OTP_RATE_LIMITED") {
@@ -1166,7 +1166,7 @@ function App() {
         return;
       }
       if (error?.code === "OTP_NOT_CONFIGURED" || error?.message === "OTP_NOT_CONFIGURED") {
-        window.alert("Verification SMS ma khddamach daba. 3awed jarrab mn b3d.");
+        window.alert("Verification b lappel ma khddamach daba. 3awed jarrab mn b3d.");
         return;
       }
       window.alert("Commande ma tsajlatch. 3awed jarrab.");
@@ -2023,7 +2023,7 @@ function Checkout({
       } else if (payload?.code === "OTP_RATE_LIMITED") {
         setOtpError("Tjarrab bzzaf. Tsena chwya w 3awed.");
       } else {
-        setOtpError("Ma 9drnach nsifto SMS daba. 3awed jarrab.");
+        setOtpError("Ma 9drnach ndirou lappel daba. 3awed jarrab.");
       }
       return false;
     }
@@ -2104,7 +2104,7 @@ function Checkout({
             if (!token) {
               const cleanCode = String(otpCode || "").replace(/\D/g, "");
               if (!/^\d{4,10}$/.test(cleanCode)) {
-                setOtpError("Dkhel code SMS li wslk.");
+                setOtpError("Dkhel code li sma3ti f lappel.");
                 return;
               }
 
@@ -2126,7 +2126,7 @@ function Checkout({
                 } else if (payload?.code === "OTP_RATE_LIMITED") {
                   setOtpError("Tjarrab code bzzaf. Tsena chwya w 3awed.");
                 } else {
-                  setOtpError("Code SMS ghalat. 3awed dkhel code s7i7.");
+                  setOtpError("Code ghalat. 3awed dkhel code s7i7.");
                 }
                 return;
               }
@@ -2170,7 +2170,7 @@ function Checkout({
               setOtpSent(false);
               setOtpSentAt(0);
               setOtpCode("");
-              setOtpError("Lverification salat. Talab code SMS jdid.");
+              setOtpError("Lverification salat. Talab appel jdid.");
             } else {
               setOtpError("Wa9e3 mochkil. 3awed jarrab.");
             }
@@ -2286,7 +2286,7 @@ function Checkout({
             }}
           >
             <label style={{ display: "grid", gap: 8, fontWeight: 700 }}>
-              Code SMS
+              Code dyal lappel
               <input
                 autoFocus
                 inputMode="numeric"
@@ -2351,7 +2351,7 @@ function Checkout({
                 ? "Code expiré — attends pour renvoyer"
                 : otpSent
                   ? "Valider le code et confirmer"
-                  : "Recevoir le code SMS"}{" "}
+                  : "Recevoir le code par appel"}{" "}
           <span>{submitting ? "…" : otpSent || verifiedToken ? "✓" : "→"}</span>
         </button>
       </form>
